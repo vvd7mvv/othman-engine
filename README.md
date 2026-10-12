@@ -2,6 +2,8 @@
 
 [العربية](#العربية) · [English](#english)
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/vvd7mvv/othman-engine/blob/main/colab.ipynb)
+
 ## العربية
 
 محرك مفتوح المصدر يستقبل **ملف تلاوة** (صوت أو فيديو)، ويخرج **السورة والآيات** ووقت بداية ونهاية **كل آية وكل كلمة**،
@@ -27,6 +29,8 @@ othman-engine download          # النموذج (~1GB) ونص Tanzil، مرة �
 تُحفظ الملفات في `~/.othman-engine`، ويمكن تغيير المكان بمتغير البيئة `OTHMAN_ENGINE_HOME`.
 
 ### الاستخدام
+**بلا تثبيت:** جرّبه في Google Colab من الزر أعلى الصفحة (`colab.ipynb`).
+
 ```bash
 othman-engine align recitation.mp3 -o result.json
 othman-engine align clip.mp4 --start 30 --end 95      # جزء من الملف فقط (بالثواني)
@@ -124,6 +128,8 @@ othman-engine download          # the model (~1 GB) and the Tanzil text, once
 Files go to `~/.othman-engine`; set `OTHMAN_ENGINE_HOME` to change that.
 
 ### Use
+**No install:** try it in Google Colab with the button at the top (`colab.ipynb`).
+
 ```bash
 othman-engine align recitation.mp3 -o result.json
 othman-engine align clip.mp4 --start 30 --end 95      # only part of the file (seconds)
