@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "othman-engine"
+version = "0.1.0"
+description = "Recognise the surah and ayahs in a Quran recitation and time every ayah and word, on CPU"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "onnxruntime>=1.18",
+    "sentencepiece>=0.2",
+    "huggingface_hub>=0.24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+othman-engine = "othman_engine.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["othman_engine*"]
