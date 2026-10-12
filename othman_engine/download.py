@@ -35,8 +35,16 @@ def download_model() -> None:
     if not os.environ.get("HF_TOKEN"):
         sys.exit(f"HF_TOKEN is not set. Accept the terms at https://huggingface.co/{config.MODEL_REPO} "
                  "and create a token at https://huggingface.co/settings/tokens")
-    snapshot_download(repo_id=config.MODEL_REPO, local_dir=config.MODEL_DIR,
-                      allow_patterns=["onnx/model.onnx", "tokenizer.model", "LICENSE", "README.md"])
+    try:
+        snapshot_download(repo_id=config.MODEL_REPO, local_dir=config.MODEL_DIR,
+                          allow_patterns=["onnx/model.onnx", "tokenizer.model", "LICENSE", "README.md"])
+    except Exception as error:  # noqa: BLE001 أخطاء huggingface_hub تختلف بين الإصدارات
+        text = str(error)
+        if any(word in text for word in ("401", "403", "gated", "Gated", "authorized", "Unauthorized")):
+            sys.exit(f"Hugging Face refused the download. Accept the model's terms while logged in at "
+                     f"https://huggingface.co/{config.MODEL_REPO} and check that HF_TOKEN is that account's token "
+                     f"(fine-grained tokens need 'Read access to public gated repos').\n{text.splitlines()[0]}")
+        sys.exit(f"Model download failed: {text.splitlines()[0] if text else type(error).__name__}")
     for path in (config.MODEL_FILE, config.TOKENIZER_FILE):
         if not path.exists():
             sys.exit(f"Missing after download: {path}")
