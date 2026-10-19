@@ -76,3 +76,40 @@ def test_compare():
     reference = {1: (1.0, 4.5), 2: (4.5, 8.0), 3: (8.0, 9.0), 4: (9.0, 10.0)}
     metrics = timings.compare(result, reference)
     assert metrics == {"ayahs": 4, "missing": 2, "mean_start_diff": 0.85, "over_1s_pct": 75.0, "mean_end_diff": 0.25}
+
+
+def _write_result(root, engine, surah, ayahs):
+    rows = [{"ayah": n, "start": s, "end": e, "confidence": 1} for n, (s, e) in ayahs.items()]
+    path = root / engine / "abdulrahman-sudais_r1" / f"{surah:03d}.json"
+    timings.save_json(path, {"surah": surah, "audio_url": SUDAIS + f"{surah:03d}.mp3", "mp3quran_read": 54,
+                             "ayahs": rows})
+
+
+def test_listen_queue(tmp_path):
+    _write_result(tmp_path, "othman-engine", 97, {0: (0, 1), 1: (1, 2), 2: (3, 4), 3: (5, 6), 4: (7, 8), 5: (9, 10)})
+    _write_result(tmp_path, "munajjam-whisperx", 97, {1: (1.1, 2), 2: (3, 5), 3: (5, 6), 4: (None, None), 5: (9, 10)})
+    reference = lambda read, surah: {1: (1, 2.2), 2: (3, 4), 3: (5.6, 6), 4: (7, 8), 5: (9, 10)}
+    queue = timings.listen_queue(tmp_path, reference=reference, random_share=0.5)
+    assert [(i["ayah"], i["bucket"], i["spread"]) for i in queue[:2]] == [(2, "disputed", 1.0), (3, "disputed", 0.6)]
+    assert len(queue) == 3 and queue[2]["bucket"] == "random" and queue[2]["ayah"] in (1, 5)
+    assert queue[0]["times"] == {"othman-engine": [3, 4], "munajjam-whisperx": [3, 5], "mp3quran": [3, 4]}
+    assert queue[0]["id"] == "abdulrahman-sudais_r1/97/2" and queue[0]["audio_url"].endswith("097.mp3")
+    assert timings.listen_queue(tmp_path, reference=reference, random_share=0.5) == queue
+    assert timings.listen_queue(tmp_path, surahs="1-96", reference=reference) == []
+    assert timings.listen_queue(tmp_path, reciters="other_r1", reference=reference) == []
+
+
+def test_record_vote(tmp_path):
+    path = tmp_path / "votes.json"
+    item = {"id": "x/97/2", "reciter": "x", "surah": 97, "ayah": 2, "bucket": "disputed", "spread": 1.0}
+    votes = timings.load_votes(path)
+    timings.record_vote(path, votes, item, "mp3quran", ["mp3quran", "othman-engine", "munajjam-whisperx"])
+    saved = timings.load_votes(path)["x/97/2"]
+    assert saved["choice"] == "mp3quran" and saved["bucket"] == "disputed" and saved["order"][0] == "mp3quran"
+    with pytest.raises(ValueError):
+        timings.record_vote(path, votes, item, "munajjam", ["mp3quran", "othman-engine", "munajjam-whisperx"])
+
+
+def test_listen_page_escapes_script():
+    page = timings.listen_page([{"id": "</script><b>"}])
+    assert "__ITEMS__" not in page and "</script><b>" not in page

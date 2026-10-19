@@ -1,0 +1,170 @@
+<div id="lc" dir="rtl">
+<style>
+  #lc { --bg: #fafaf7; --fg: #1a1a1a; --muted: #6b6b6b; --line: #d8d8d0; --accent: #1f7a4d; --soft: #e6f2ec; --bad: #b3261e;
+        background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, "Segoe UI", Tahoma, sans-serif;
+        max-width: 640px; padding: 20px; border-radius: 12px; border: 1px solid var(--line); }
+  #lc .row { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+  #lc button { font: inherit; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--line);
+               background: #fff; color: var(--fg); cursor: pointer; min-width: 96px; }
+  #lc button:hover:not(:disabled) { border-color: var(--accent); }
+  #lc button:disabled { opacity: .45; cursor: default; }
+  #lc button.playing { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #lc button.vote { background: var(--soft); }
+  #lc .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  #lc .title { font-size: 20px; font-weight: 600; }
+  #lc .muted { color: var(--muted); font-size: 14px; }
+  #lc .reveal { border-top: 1px solid var(--line); padding-top: 10px; min-height: 84px; }
+  #lc .reveal div { padding: 2px 6px; border-radius: 6px; }
+  #lc .reveal .chosen { background: var(--soft); font-weight: 600; }
+  #lc .error { color: var(--bad); }
+  #lc .num { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+</style>
+<div class="head">
+  <div class="title" id="lc-title"></div>
+  <div class="muted num" id="lc-count"></div>
+</div>
+<div class="muted">اسمع الثلاثة، واختر أفضل قصّ: يبدأ مع أول الآية ويوقف مع آخرها بدون ما يقص منها أو يدخل من الآية اللي بعدها.</div>
+<div class="row" id="lc-play"></div>
+<div class="row" id="lc-votes"></div>
+<div class="reveal" id="lc-reveal"></div>
+<div class="muted" id="lc-status"></div>
+<audio id="lc-audio" preload="none"></audio>
+<script>
+(() => {
+  const items = __ITEMS__;
+  const LETTERS = ["أ", "ب", "ج"];
+  const NAMES = {"othman-engine": "محرك عثمان", "munajjam-whisperx": "منجّم (whisperx)", "mp3quran": "mp3quran"};
+  const REVEAL_MS = 2000;
+  const $ = (id) => document.getElementById(id);
+  const audio = $("lc-audio");
+  let index = 0, order = [], playToken = 0, busy = false;
+
+  const fmt = (s) => s.toFixed(2);
+  const shuffle = (list) => {
+    const copy = list.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  function button(label, className, onClick) {
+    const el = document.createElement("button");
+    el.textContent = label;
+    el.className = className;
+    el.addEventListener("click", onClick);
+    return el;
+  }
+
+  function stop() {
+    playToken++;
+    audio.pause();
+    document.querySelectorAll("#lc-play button").forEach((b) => b.classList.remove("playing"));
+  }
+
+  function waitFor(event) {
+    return new Promise((resolve, reject) => {
+      const done = () => { cleanup(); resolve(); };
+      const fail = () => { cleanup(); reject(audio.error); };
+      const cleanup = () => { audio.removeEventListener(event, done); audio.removeEventListener("error", fail); };
+      audio.addEventListener(event, done);
+      audio.addEventListener("error", fail);
+    });
+  }
+
+  async function play(slot, el) {
+    const item = items[index];
+    const [start, end] = item.times[order[slot]];
+    stop();
+    const token = playToken;
+    el.classList.add("playing");
+    $("lc-status").textContent = "";
+    try {
+      if (audio.src !== item.audio_url) {
+        audio.src = item.audio_url;
+        audio.load();
+        await waitFor("loadedmetadata");
+      }
+      audio.currentTime = start;
+      await waitFor("seeked");
+      if (token !== playToken) return;
+      await audio.play();
+    } catch (error) {
+      if (token === playToken) {
+        el.classList.remove("playing");
+        $("lc-status").innerHTML = '<span class="error">ما اشتغل الصوت. تأكد من الإنترنت وجرّب مرة ثانية.</span>';
+      }
+      return;
+    }
+    // timeupdate يتأخر حتى ربع ثانية، فنراقب الوقت مع كل إطار لنوقف عند النهاية بالضبط
+    const watch = () => {
+      if (token !== playToken) return;
+      if (audio.currentTime >= end || audio.ended) { stop(); return; }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+  }
+
+  function show() {
+    stop();
+    busy = false;
+    $("lc-reveal").innerHTML = "";
+    $("lc-status").textContent = "";
+    $("lc-play").innerHTML = "";
+    $("lc-votes").innerHTML = "";
+    if (index >= items.length) {
+      $("lc-title").textContent = "خلصت الآيات 🎉";
+      $("lc-count").textContent = "";
+      $("lc-reveal").textContent = "شغّل خلية النتيجة تحت عشان تشوف نسبة فوز كل مصدر.";
+      return;
+    }
+    const item = items[index];
+    order = shuffle(Object.keys(item.times));
+    $("lc-title").textContent = `${item.reciter} · سورة ${item.surah} · آية ${item.ayah}`;
+    $("lc-count").textContent = `${index + 1} / ${items.length}`;
+    LETTERS.forEach((letter, slot) => {
+      const el = button(`▶ ${letter}`, "", () => play(slot, el));
+      $("lc-play").append(el);
+    });
+    $("lc-play").append(button("■ إيقاف", "", stop));
+    LETTERS.forEach((letter, slot) => $("lc-votes").append(button(`${letter} أفضل`, "vote", () => vote(order[slot]))));
+    $("lc-votes").append(button("متساوية", "vote", () => vote("equal")));
+  }
+
+  function reveal(item, choice) {
+    $("lc-reveal").innerHTML = "";
+    order.forEach((source, slot) => {
+      const [start, end] = item.times[source];
+      const line = document.createElement("div");
+      line.className = source === choice ? "chosen" : "";
+      line.innerHTML = `${LETTERS[slot]} = ${NAMES[source]} <span class="muted num">${fmt(start)} → ${fmt(end)}</span>`;
+      $("lc-reveal").append(line);
+    });
+    if (choice === "equal") $("lc-reveal").append(Object.assign(document.createElement("div"), {className: "chosen", textContent: "اخترت: متساوية"}));
+  }
+
+  async function vote(choice) {
+    if (busy) return;
+    busy = true;
+    stop();
+    const item = items[index];
+    document.querySelectorAll("#lc button").forEach((b) => (b.disabled = true));
+    $("lc-status").textContent = "يحفظ…";
+    try {
+      await google.colab.kernel.invokeFunction("othman.vote", [item.id, choice, order], {});
+    } catch (error) {
+      $("lc-status").innerHTML = '<span class="error">ما انحفظ صوتك. تأكد إن الجلسة شغالة (وإن خلية الصفحة مشغّلة في نفس الجلسة) وجرّب مرة ثانية.</span>';
+      document.querySelectorAll("#lc button").forEach((b) => (b.disabled = false));
+      busy = false;
+      return;
+    }
+    $("lc-status").textContent = "انحفظ ✓";
+    reveal(item, choice);
+    setTimeout(() => { index++; show(); }, REVEAL_MS);
+  }
+
+  show();
+})();
+</script>
+</div>

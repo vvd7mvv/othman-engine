@@ -4,6 +4,7 @@
 """
 import json
 import os
+import random
 import re
 import subprocess
 import tempfile
@@ -243,3 +244,70 @@ def compare(result: dict, reference: dict[int, tuple[float, float]], threshold: 
         "over_1s_pct": round(100 * over / count, 1) if count else None,
         "mean_end_diff": mean(end_diffs),
     }
+
+
+LISTEN_SOURCES = ("othman-engine", "munajjam-whisperx", "mp3quran")
+
+
+def _timed(result: dict) -> dict[int, tuple[float, float]]:
+    return {row["ayah"]: (row["start"], row["end"])
+            for row in result["ayahs"] if row["ayah"] > 0 and row["start"] is not None}
+
+
+def _read(path: Path) -> dict:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def listen_queue(out_root, reciters: str = "", surahs: str = "", threshold: float = 0.5,
+                 random_share: float = 0.2, seed: int = 0, reference=mp3quran_reference) -> list[dict]:
+    """آيات الاستماع الأعمى: التي وقّتتها المصادر الثلاثة كلها. المختلف عليها (أكبر فرق في البداية أو النهاية
+    أكثر من threshold) أولاً من الأكبر للأصغر، ثم عينة عشوائية ثابتة (seed) من الباقي."""
+    wanted_surahs = set(parse_surahs(surahs)) if surahs.strip() else None
+    wanted_reciters = {r.strip() for r in reciters.replace("،", ",").split(",") if r.strip()}
+    disputed, agreed = [], []
+    for path in sorted(Path(out_root, LISTEN_SOURCES[0]).glob("*/*.json")):
+        reciter = path.parent.name
+        other = Path(out_root, LISTEN_SOURCES[1], reciter, path.name)
+        if wanted_reciters and reciter not in wanted_reciters or not other.exists():
+            continue
+        ours = _read(path)
+        read = ours.get("mp3quran_read")
+        if wanted_surahs and ours["surah"] not in wanted_surahs or not read:
+            continue
+        times = dict(zip(LISTEN_SOURCES, (_timed(ours), _timed(_read(other)), reference(read, ours["surah"]))))
+        for ayah in sorted(set.intersection(*(set(t) for t in times.values()))):
+            spans = {source: times[source][ayah] for source in LISTEN_SOURCES}
+            spread = max(max(s[i] for s in spans.values()) - min(s[i] for s in spans.values()) for i in (0, 1))
+            item = {"id": f"{reciter}/{ours['surah']}/{ayah}", "reciter": reciter, "surah": ours["surah"],
+                    "ayah": ayah, "audio_url": ours["audio_url"], "spread": round(spread, 3),
+                    "times": {source: [round(a, 3), round(b, 3)] for source, (a, b) in spans.items()}}
+            (disputed if spread > threshold else agreed).append(item)
+    for item in disputed:
+        item["bucket"] = "disputed"
+    disputed.sort(key=lambda item: -item["spread"])
+    sample = random.Random(seed).sample(agreed, round(len(agreed) * random_share))
+    for item in sample:
+        item["bucket"] = "random"
+    return disputed + sample
+
+
+def load_votes(path) -> dict:
+    try:
+        return _read(path)
+    except (OSError, ValueError):
+        return {}
+
+
+def record_vote(path, votes: dict, item: dict, choice: str, order: list[str]) -> None:
+    """choice: أحد LISTEN_SOURCES أو "equal". order: المصادر بترتيب أ، ب، ج كما ظهرت."""
+    if choice not in (*LISTEN_SOURCES, "equal") or sorted(order) != sorted(LISTEN_SOURCES):
+        raise ValueError(f"Bad vote: {choice} {order}")
+    votes[item["id"]] = {key: item[key] for key in ("reciter", "surah", "ayah", "bucket", "spread")}
+    votes[item["id"]].update(choice=choice, order=order, time=time.strftime("%Y-%m-%d %H:%M:%S"))
+    save_json(Path(path), votes)
+
+
+def listen_page(items: list[dict]) -> str:
+    template = (Path(__file__).parent / "listen.html").read_text(encoding="utf-8")
+    # "</" داخل JSON قد يغلق وسم السكربت مبكراً
+    return template.replace("__ITEMS__", json.dumps(items, ensure_ascii=False).replace("</", "<\\/"))
