@@ -31,6 +31,10 @@ othman-engine download          # النموذج (~1GB) ونص Tanzil، مرة �
 ### الاستخدام
 **بلا تثبيت:** جرّبه في Google Colab من الزر أعلى الصفحة (`colab.ipynb`).
 
+**مصحف كامل:** `notebooks/othman_engine_batch.ipynb` يوقّت سوراً من روابط صوت (مثل مجلد قارئ في mp3quran)، ويحفظ
+ملف JSON لكل سورة في Google Drive أولاً بأول، ويكمل من حيث توقف. وبنفس المدخلات والصيغة `munajjam_batch.ipynb`
+لمحرك [منجّم](https://github.com/Itqan-community/Munajjam)، و`compare_engines.ipynb` يقارن الاثنين بتوقيت mp3quran.
+
 ```bash
 othman-engine align recitation.mp3 -o result.json
 othman-engine align clip.mp4 --start 30 --end 95      # جزء من الملف فقط (بالثواني)
@@ -129,6 +133,10 @@ Files go to `~/.othman-engine`; set `OTHMAN_ENGINE_HOME` to change that.
 
 ### Use
 **No install:** try it in Google Colab with the button at the top (`colab.ipynb`).
+
+**Whole mushaf:** `notebooks/othman_engine_batch.ipynb` times surahs from audio URLs (e.g. a reciter folder on mp3quran),
+saves one JSON per surah to Google Drive as it goes and resumes where it stopped. `munajjam_batch.ipynb` does the same
+with [Munajjam](https://github.com/Itqan-community/Munajjam), and `compare_engines.ipynb` compares both with mp3quran's timings.
 
 ```bash
 othman-engine align recitation.mp3 -o result.json
