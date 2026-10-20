@@ -45,7 +45,7 @@ SURAH_ALIASES = {
     "الدهر": 76, "عم": 78, "الانشراح": 94, "اقرأ": 96, "الزلزال": 99, "الكافرين": 109, "اللهب": 111, "تبت": 111,
     "التوحيد": 112,
 }
-AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a", ".flac", ".ogg")
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a", ".opus", ".ogg", ".flac", ".aac")
 
 MP3QURAN_API = "https://mp3quran.net/api/v3"
 USER_AGENT = "othman-timings/1.0"
@@ -439,7 +439,8 @@ class _AudioHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {first}-{last}/{size}")
         else:
             self.send_response(200)
-        kind = {".wav": "audio/wav", ".m4a": "audio/mp4", ".flac": "audio/flac", ".ogg": "audio/ogg"}
+        kind = {".wav": "audio/wav", ".m4a": "audio/mp4", ".opus": "audio/ogg", ".ogg": "audio/ogg", ".flac": "audio/flac",
+                ".aac": "audio/aac"}
         self.send_header("Content-Type", kind.get(Path(path).suffix.lower(), "audio/mpeg"))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(last - first + 1))
