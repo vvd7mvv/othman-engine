@@ -409,13 +409,15 @@ def load_votes(path) -> dict:
     for vote in votes.values():
         if "winners" not in vote and "choice" in vote:
             vote["winners"] = sorted(vote["order"]) if vote["choice"] == "equal" else [vote["choice"]]
+        for note in vote.get("notes", {}).values():
+            tags = {OLD_TAGS.get(tag, tag) for tag in note["tags"]}
+            note["tags"] = [tag for tag in NOTE_TAGS if tag in tags]
     return votes
 
 
 # ملاحظات اختيارية على كل قصّة في صفحة الاستماع وصفحة المراجعة
 NOTE_TAGS = {
-    "late_start": "بدأ متأخر (قص من أول الآية)",
-    "no_lead": "الآية كاملة بس ما فيه هامش بداية",
+    "late_start": "قص من أول الآية أو ما فيه هامش بداية",
     "long_lead": "هامش البداية طويل",
     "cut_end": "قص من آخر الآية",
     "cut_echo": "قص الصدى أو آخر النفَس",
@@ -426,6 +428,8 @@ NOTE_TAGS = {
     "perfect": "مثالي",
 }
 NOTE_MAX_CHARS = 500
+# وسوم انحذفت أو اندمجت في غيرها، وقد تكون محفوظة في أصوات قديمة
+OLD_TAGS = {"no_lead": "late_start"}
 
 
 def clean_notes(notes: dict | None, sources) -> dict:

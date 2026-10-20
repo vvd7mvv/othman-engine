@@ -275,6 +275,9 @@ def test_colab_proxy_url_retries(monkeypatch):
 def test_load_votes_first_round_format(tmp_path):
     order = ["mp3quran", "othman-engine", "munajjam-whisperx"]
     path = tmp_path / "votes.json"
-    timings.save_json(path, {"a": {"choice": "mp3quran", "order": order}, "b": {"choice": "equal", "order": order}})
+    notes = {"othman-engine": {"tags": ["no_lead", "late_start", "cut_end"], "text": ""}}
+    timings.save_json(path, {"a": {"choice": "mp3quran", "order": order, "notes": notes},
+                             "b": {"choice": "equal", "order": order}})
     votes = timings.load_votes(path)
     assert votes["a"]["winners"] == ["mp3quran"] and votes["b"]["winners"] == sorted(order)
+    assert votes["a"]["notes"]["othman-engine"]["tags"] == ["late_start", "cut_end"]
