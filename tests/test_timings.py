@@ -153,6 +153,23 @@ def test_record_vote_and_points(tmp_path):
     for winners in ([], ["munajjam"]):
         with pytest.raises(ValueError):
             timings.record_vote(path, votes, item, winners, order)
+    assert "notes" not in saved
+
+
+def test_vote_notes(tmp_path):
+    path = tmp_path / "votes.json"
+    item = {"id": "x/97/2", "reciter": "x", "surah": 97, "ayah": 2, "bucket": "disputed", "spread": 1.0,
+            "times": {"mp3quran": [0, 1], "othman-engine": [0, 1], "munajjam-whisperx": [0, 1]}}
+    order = ["mp3quran", "othman-engine", "munajjam-whisperx"]
+    notes = {"othman-engine": {"tags": ["from_next", "cut_echo", "cut_echo"], "text": "  الصدى راح  "},
+             "mp3quran": {"tags": [], "text": " "}}
+    timings.record_vote(path, {}, item, ["mp3quran"], order, notes)
+    saved = timings.load_votes(path)["x/97/2"]
+    assert saved["notes"] == {"othman-engine": {"tags": ["cut_echo", "from_next"], "text": "الصدى راح"}}
+    for bad in ({"othman-engine": {"tags": ["nope"]}}, {"other": {"tags": ["perfect"]}}):
+        with pytest.raises(ValueError):
+            timings.record_vote(path, {}, item, ["mp3quran"], order, bad)
+    assert len(timings.clean_notes({"mp3quran": {"text": "x" * 900}}, order)["mp3quran"]["text"]) == 500
 
 
 def test_serve_local_audio(tmp_path):
@@ -176,8 +193,58 @@ def test_serve_local_audio(tmp_path):
     reloaded.use_served_audio(items, paths, "http://127.0.0.1:8799/")
     with opener.open(items[0]["audio_url"]) as response:
         assert response.read() == b"x" * 50
+    # صفحة ثانية على منفذ ثاني ما تغيّر ملفات الأول
+    reloaded.serve_local_audio([{"audio_url": str(audio)}], port=8798)
+    with opener.open(items[0]["audio_url"]) as response:
+        assert response.read() == b"x" * 50
 
 
 def test_listen_page_escapes_script():
-    page = timings.listen_page([{"id": "</script><b>"}])
-    assert "__ITEMS__" not in page and "</script><b>" not in page
+    page = timings.listen_page([{"id": "</script><b>"}], mode="review")
+    assert "__" not in page.split("<script>")[1] and "</script><b>" not in page
+    assert '"review"' in page and "cut_echo" in page
+
+
+def _losses_fixture(tmp_path):
+    _write_result(tmp_path, "othman-engine", 97, {1: (1, 2), 2: (3, 4), 3: (5, 6)})
+    _write_result(tmp_path, "munajjam-whisperx", 97, {1: (1, 2.3), 2: (3, 4.4), 3: (5, 6)})
+    reference = lambda read, surah: {1: (0.9, 3), 2: (3, 5), 3: (5, 7)}
+    vote = lambda ayah, winners, **extra: {"reciter": "abdulrahman-sudais_r1", "surah": 97, "ayah": ayah,
+                                           "bucket": "disputed", "spread": 1, "winners": winners,
+                                           "order": ["mp3quran", "othman-engine", "munajjam-whisperx"], **extra}
+    timings.save_json(tmp_path / "votes.json", {"a/97/1": vote(1, ["mp3quran"]), "a/97/3": vote(3, ["othman-engine"])})
+    notes = {"othman-engine": {"tags": ["cut_echo"], "text": "قصير"}}
+    timings.save_json(tmp_path / "votes-pad0.5.json", {"a/97/2": vote(2, ["munajjam-whisperx", "mp3quran"], notes=notes)})
+    return reference
+
+
+def test_review_queue_and_losses(tmp_path):
+    reference = _losses_fixture(tmp_path)
+    rounds = {"votes.json": 0, "votes-pad0.5.json": 0.5, "missing.json": 0}
+    items = timings.review_queue(tmp_path, rounds, reference=reference)
+    assert [(i["id"], i["winners"]) for i in items] == [
+        ("pad0/a/97/1", ["mp3quran"]), ("pad0.5/a/97/2", ["munajjam-whisperx", "mp3quran"])]
+    second = items[1]
+    assert list(second["times"]) == ["othman-engine", "munajjam-whisperx", "mp3quran"]
+    assert second["times"]["othman-engine"] == [2.5, 4.5] and second["raw"]["othman-engine"] == [3, 4]
+    assert second["times"]["mp3quran"] == [3, 5] and second["notes"]["othman-engine"]["tags"] == ["cut_echo"]
+
+    path = tmp_path / "review.json"
+    reviews = {}
+    timings.record_review(path, reviews, second, {"othman-engine": {"tags": ["cut_end"], "text": "آخر حرف"}})
+    assert timings.load_votes(path)["pad0.5/a/97/2"]["notes"]["othman-engine"]["tags"] == ["cut_end"]
+    rows = timings.loss_rows(items, reviews)
+    assert [(r["ayah"], r["winner"], r["d_start"], r["d_end"]) for r in rows] == [
+        (1, "mp3quran", 0.1, -1), (2, "munajjam-whisperx", 0, -0.4), (2, "mp3quran", 0, -1)]
+    assert rows[1]["tags"] == "قص من آخر الآية, قص الصدى أو آخر النفَس" and rows[1]["text"] == "قصير / آخر حرف"
+
+    tags = timings.note_rows(timings.load_votes(tmp_path / "votes-pad0.5.json"), "v") + timings.note_rows(reviews, "r")
+    assert [(t["origin"], t["tag"]) for t in tags] == [("v", "قص الصدى أو آخر النفَس"), ("r", "قص من آخر الآية")]
+
+
+def test_raw_offsets(tmp_path):
+    reference = _losses_fixture(tmp_path)
+    rows = timings.raw_offsets(tmp_path, reference=reference)
+    munajjam = [(r["ayah"], r["d_start"], r["d_end"]) for r in rows if r["other"] == "munajjam-whisperx"]
+    assert munajjam == [(1, 0, -0.3), (2, 0, -0.4), (3, 0, 0)]
+    assert len(rows) == 6

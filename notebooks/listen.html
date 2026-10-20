@@ -19,13 +19,18 @@
   #lc .reveal .chosen { background: var(--soft); font-weight: 600; }
   #lc .error { color: var(--bad); }
   #lc .num { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+  #lc .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 10px 0; background: #fff; }
+  #lc .card .row { margin: 8px 0 0; gap: 6px; }
+  #lc button.tag { min-width: 0; padding: 4px 10px; font-size: 13px; border-radius: 999px; }
+  #lc button.tag.on { background: var(--soft); border-color: var(--accent); }
+  #lc input.note { font: inherit; font-size: 14px; width: 100%; box-sizing: border-box; margin-top: 8px;
+                   padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--fg); }
 </style>
 <div class="head">
   <div class="title" id="lc-title"></div>
   <div class="muted num" id="lc-count"></div>
 </div>
-<div class="muted">اسمعها كلها، واختر أفضل قصّ: يبدأ مع أول الآية ويوقف مع آخرها بدون ما يقص منها أو يدخل من الآية اللي بعدها.
-إذا تساوى أكثر من واحد في الأفضلية اخترهم كلهم.</div>
+<div class="muted" id="lc-help"></div>
 <div class="row" id="lc-play"></div>
 <div class="row" id="lc-votes"></div>
 <div class="reveal" id="lc-reveal"></div>
@@ -34,12 +39,18 @@
 <script>
 (() => {
   const items = __ITEMS__;
+  const TAGS = __TAGS__;
+  const REVIEW = __MODE__ === "review";
   const LETTERS = ["أ", "ب", "ج"];
   const NAMES = {"othman-engine": "محرك عثمان", "munajjam-whisperx": "منجّم (whisperx)", "mp3quran": "mp3quran"};
-  const REVEAL_MS = 2000;
+  const REVEAL_MS = REVIEW ? 600 : 2000;
+  const HELP = REVIEW
+    ? "آيات خسرها محركنا. اسمع قصّنا وقصّ الفائز، وحدد وش المشكلة في قصّنا (والفائز إذا تبي)."
+    : "اسمعها كلها، واختر أفضل قصّ: يبدأ مع أول الآية ويوقف مع آخرها بدون ما يقص منها أو يدخل من الآية اللي قبلها أو بعدها. "
+      + "إذا تساوى أكثر من واحد في الأفضلية اخترهم كلهم. الملاحظات تحت كل قصّة اختيارية.";
   const $ = (id) => document.getElementById(id);
   const audio = $("lc-audio");
-  let index = 0, order = [], picked = new Set(), playToken = 0, busy = false;
+  let index = 0, order = [], picked = new Set(), notes = {}, playToken = 0, busy = false;
 
   const fmt = (s) => s.toFixed(2);
   const shuffle = (list) => {
@@ -118,30 +129,99 @@
     if (index >= items.length) {
       $("lc-title").textContent = "خلصت الآيات 🎉";
       $("lc-count").textContent = "";
-      $("lc-reveal").textContent = "شغّل خلية النتيجة تحت عشان تشوف نسبة فوز كل مصدر.";
+      $("lc-reveal").textContent = REVIEW ? "شغّل خلية التحليل تحت." : "شغّل خلية النتيجة تحت عشان تشوف نسبة فوز كل مصدر.";
       return;
     }
     const item = items[index];
-    order = shuffle(Object.keys(item.times));
+    // في المراجعة: محركنا أولاً ثم الفائزون، بأسمائهم
+    order = REVIEW ? Object.keys(item.times) : shuffle(Object.keys(item.times));
     picked = new Set();
-    $("lc-title").textContent = `${item.reciter} · سورة ${item.surah} · آية ${item.ayah}`;
+    notes = {};
+    const label = (slot) => REVIEW ? NAMES[order[slot]] : LETTERS[slot];
+    const round = REVIEW ? ` · هامش ${item.pad}` : "";
+    $("lc-title").textContent = `${item.reciter} · سورة ${item.surah} · آية ${item.ayah}${round}`;
     $("lc-count").textContent = `${index + 1} / ${items.length}`;
     order.forEach((source, slot) => {
-      const el = button(`▶ ${LETTERS[slot]}`, "", () => play(slot, el));
+      const el = button(`▶ ${label(slot)}`, "", () => play(slot, el));
       $("lc-play").append(el);
     });
     $("lc-play").append(button("■ إيقاف", "", stop));
-    const next = button("التالي ←", "next", vote);
-    next.disabled = true;
+    const next = button(REVIEW ? "حفظ والتالي ←" : "التالي ←", "next", REVIEW ? saveReview : vote);
+    next.disabled = !REVIEW;
     order.forEach((source, slot) => {
-      const el = button(`${LETTERS[slot]} الأفضل`, "pick", () => {
-        picked.has(source) ? picked.delete(source) : picked.add(source);
-        el.classList.toggle("on", picked.has(source));
-        next.disabled = picked.size === 0;
-      });
-      $("lc-votes").append(el);
+      const card = document.createElement("div");
+      card.className = "card";
+      if (REVIEW) {
+        const [start, end] = item.times[source];
+        const won = item.winners.includes(source) ? " ★ فاز" : "";
+        card.innerHTML = `<b></b> <span class="muted num">${fmt(start)} → ${fmt(end)}</span>`;
+        card.querySelector("b").textContent = NAMES[source] + won;
+      } else {
+        const el = button(`${LETTERS[slot]} الأفضل`, "pick", () => {
+          picked.has(source) ? picked.delete(source) : picked.add(source);
+          el.classList.toggle("on", picked.has(source));
+          next.disabled = picked.size === 0;
+        });
+        card.append(el);
+      }
+      card.append(noteBox(source, REVIEW ? (item.notes || {})[source] : null));
+      $("lc-votes").append(card);
     });
     $("lc-votes").append(next);
+  }
+
+  function noteBox(source, previous) {
+    const note = notes[source] = {tags: new Set(previous ? previous.tags : []), text: previous ? previous.text : ""};
+    const box = document.createElement("div");
+    const tags = document.createElement("div");
+    tags.className = "row";
+    Object.entries(TAGS).forEach(([tag, text]) => {
+      const el = button(text, "tag", () => {
+        note.tags.has(tag) ? note.tags.delete(tag) : note.tags.add(tag);
+        el.classList.toggle("on", note.tags.has(tag));
+      });
+      el.classList.toggle("on", note.tags.has(tag));
+      tags.append(el);
+    });
+    const input = document.createElement("input");
+    input.className = "note";
+    input.placeholder = "ملاحظة (اختياري)";
+    input.maxLength = 500;
+    input.value = note.text;
+    input.addEventListener("input", () => (note.text = input.value));
+    box.append(tags, input);
+    return box;
+  }
+
+  function notesPayload() {
+    const payload = {};
+    for (const [source, note] of Object.entries(notes)) {
+      if (note.tags.size || note.text.trim()) payload[source] = {tags: [...note.tags], text: note.text.trim()};
+    }
+    return payload;
+  }
+
+  async function send(name, args) {
+    if (busy) return false;
+    busy = true;
+    stop();
+    document.querySelectorAll("#lc button, #lc input").forEach((b) => (b.disabled = true));
+    $("lc-status").textContent = "يحفظ…";
+    try {
+      await google.colab.kernel.invokeFunction(name, args, {});
+    } catch (error) {
+      $("lc-status").innerHTML = '<span class="error">ما انحفظ. تأكد إن الجلسة شغالة (وإن خلية الصفحة مشغّلة في نفس الجلسة) وجرّب مرة ثانية.</span>';
+      document.querySelectorAll("#lc button, #lc input").forEach((b) => (b.disabled = false));
+      busy = false;
+      return false;
+    }
+    $("lc-status").textContent = "انحفظ ✓";
+    return true;
+  }
+
+  async function saveReview() {
+    if (!(await send("othman.review", [items[index].id, notesPayload()]))) return;
+    setTimeout(() => { index++; show(); }, REVEAL_MS);
   }
 
   function reveal(item, winners) {
@@ -156,26 +236,13 @@
   }
 
   async function vote() {
-    const winners = [...picked];
-    if (busy) return;
-    busy = true;
-    stop();
-    const item = items[index];
-    document.querySelectorAll("#lc button").forEach((b) => (b.disabled = true));
-    $("lc-status").textContent = "يحفظ…";
-    try {
-      await google.colab.kernel.invokeFunction("othman.vote", [item.id, winners, order], {});
-    } catch (error) {
-      $("lc-status").innerHTML = '<span class="error">ما انحفظ صوتك. تأكد إن الجلسة شغالة (وإن خلية الصفحة مشغّلة في نفس الجلسة) وجرّب مرة ثانية.</span>';
-      document.querySelectorAll("#lc button").forEach((b) => (b.disabled = false));
-      busy = false;
-      return;
-    }
-    $("lc-status").textContent = "انحفظ ✓";
+    const item = items[index], winners = [...picked];
+    if (!(await send("othman.vote", [item.id, winners, order, notesPayload()]))) return;
     reveal(item, winners);
     setTimeout(() => { index++; show(); }, REVEAL_MS);
   }
 
+  $("lc-help").textContent = HELP;
   show();
 })();
 </script>
