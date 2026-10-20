@@ -352,14 +352,17 @@ def _engine_spans(result: dict, pad: float) -> dict[int, tuple[float, float]]:
     return pad_times(spans, result.get("meta", {}).get("audio_seconds"), pad)
 
 
-def listen_queue(out_root, reciters: str = "", surahs: str = "", threshold: float = 0.5, random_share: float = 0.2,
-                 pad: float = 0.5, seed: int = 0, reference=mp3quran_reference) -> list[dict]:
-    """آيات الاستماع الأعمى من المحركين (بهامش pad) وتوقيت mp3quran إن وُجد للقارئ.
-    كل الآيات المختلف عليها (أكبر فرق في البداية أو النهاية أكثر من threshold) مع عينة عشوائية ثابتة (seed)
-    من الباقي، مخلوطة بترتيب عشوائي ثابت حتى لا يتتابع قارئ واحد أو سورة واحدة."""
+def _surah_times(ours: dict, other: dict, pad: float, reference) -> dict[str, dict]:
+    times = {LISTEN_ENGINES[0]: _engine_spans(ours, pad), LISTEN_ENGINES[1]: _engine_spans(other, pad)}
+    if ours.get("mp3quran_read"):
+        times[REFERENCE] = reference(ours["mp3quran_read"], ours["surah"])
+    return times
+
+
+def _engine_pairs(out_root, reciters: str = "", surahs: str = ""):
+    """(القارئ، ناتج محركنا، ناتج منجّم) لكل سورة خلّصها المحركان."""
     wanted_surahs = set(parse_surahs(surahs)) if surahs.strip() else None
     wanted_reciters = {r.strip() for r in reciters.replace("،", ",").split(",") if r.strip()}
-    disputed, agreed = [], []
     for path in sorted(Path(out_root, LISTEN_ENGINES[0]).glob("*/*.json")):
         reciter = path.parent.name
         other = Path(out_root, LISTEN_ENGINES[1], reciter, path.name)
@@ -368,9 +371,17 @@ def listen_queue(out_root, reciters: str = "", surahs: str = "", threshold: floa
         ours = _read(path)
         if wanted_surahs and ours["surah"] not in wanted_surahs:
             continue
-        times = {LISTEN_ENGINES[0]: _engine_spans(ours, pad), LISTEN_ENGINES[1]: _engine_spans(_read(other), pad)}
-        if ours.get("mp3quran_read"):
-            times[REFERENCE] = reference(ours["mp3quran_read"], ours["surah"])
+        yield reciter, ours, _read(other)
+
+
+def listen_queue(out_root, reciters: str = "", surahs: str = "", threshold: float = 0.5, random_share: float = 0.2,
+                 pad: float = 0.5, seed: int = 0, reference=mp3quran_reference) -> list[dict]:
+    """آيات الاستماع الأعمى من المحركين (بهامش pad) وتوقيت mp3quran إن وُجد للقارئ.
+    كل الآيات المختلف عليها (أكبر فرق في البداية أو النهاية أكثر من threshold) مع عينة عشوائية ثابتة (seed)
+    من الباقي، مخلوطة بترتيب عشوائي ثابت حتى لا يتتابع قارئ واحد أو سورة واحدة."""
+    disputed, agreed = [], []
+    for reciter, ours, other in _engine_pairs(out_root, reciters, surahs):
+        times = _surah_times(ours, other, pad, reference)
         for ayah in sorted(set.intersection(*(set(t) for t in times.values()))):
             spans = {source: times[source][ayah] for source in times}
             spread = max(max(s[i] for s in spans.values()) - min(s[i] for s in spans.values()) for i in (0, 1))
@@ -396,13 +407,43 @@ def load_votes(path) -> dict:
         return {}
 
 
-def record_vote(path, votes: dict, item: dict, winners: list[str], order: list[str]) -> None:
+# ملاحظات اختيارية على كل قصّة في صفحة الاستماع وصفحة المراجعة
+NOTE_TAGS = {
+    "late_start": "بدأ متأخر (قص من أول الآية)",
+    "long_lead": "هامش البداية طويل",
+    "cut_end": "قص من آخر الآية",
+    "cut_echo": "قص الصدى أو آخر النفَس",
+    "long_tail": "هامش النهاية طويل",
+    "from_previous": "دخل من الآية اللي قبلها",
+    "from_next": "دخل من الآية اللي بعدها",
+    "perfect": "مثالي",
+}
+NOTE_MAX_CHARS = 500
+
+
+def clean_notes(notes: dict | None, sources) -> dict:
+    """{مصدر: {"tags": [...], "text": ""}} بلا الفارغ، والوسوم بترتيب NOTE_TAGS."""
+    cleaned = {}
+    for source, note in (notes or {}).items():
+        tags = set(note.get("tags") or [])
+        text = str(note.get("text") or "").strip()[:NOTE_MAX_CHARS]
+        if source not in sources or not tags <= set(NOTE_TAGS):
+            raise ValueError(f"Bad note: {source} {sorted(tags)}")
+        if tags or text:
+            cleaned[source] = {"tags": [tag for tag in NOTE_TAGS if tag in tags], "text": text}
+    return cleaned
+
+
+def record_vote(path, votes: dict, item: dict, winners: list[str], order: list[str], notes: dict | None = None) -> None:
     """winners: مصدر أو أكثر من مصادر الآية (المتساوية في الأفضلية). order: المصادر بترتيب أ، ب، ج كما ظهرت."""
     sources = sorted(item["times"])
     if not winners or not set(winners) <= set(sources) or sorted(order) != sources:
         raise ValueError(f"Bad vote: {winners} {order}")
-    votes[item["id"]] = {key: item[key] for key in ("reciter", "surah", "ayah", "bucket", "spread")}
-    votes[item["id"]].update(winners=sorted(set(winners)), order=order, time=time.strftime("%Y-%m-%d %H:%M:%S"))
+    vote = {key: item[key] for key in ("reciter", "surah", "ayah", "bucket", "spread")}
+    vote.update(winners=sorted(set(winners)), order=order, time=time.strftime("%Y-%m-%d %H:%M:%S"))
+    if cleaned := clean_notes(notes, sources):
+        vote["notes"] = cleaned
+    votes[item["id"]] = vote
     save_json(Path(path), votes)
 
 
@@ -414,6 +455,83 @@ def vote_points(votes: dict) -> list[dict]:
             share = 1 / len(vote["winners"]) if source in vote["winners"] else 0.0
             rows.append({"reciter": vote["reciter"], "surah": vote["surah"], "bucket": vote["bucket"],
                          "source": source, "points": share, "all_equal": len(vote["winners"]) == len(vote["order"])})
+    return rows
+
+
+def review_queue(out_root, rounds: dict[str, float], reference=mp3quran_reference) -> list[dict]:
+    """الآيات اللي خسرها محركنا في جولات الاستماع. rounds: {اسم ملف الأصوات: الهامش اللي انسمعت به}.
+    times كما انسمعت (بهامش الجولة) لمحركنا والفائزين فقط، وraw بلا هامش للتحليل."""
+    ours_name = LISTEN_ENGINES[0]
+    cache, items = {}, []
+    for name, pad in rounds.items():
+        for vote_id, vote in load_votes(Path(out_root, name)).items():
+            if ours_name in vote["winners"]:
+                continue
+            key = (vote["reciter"], vote["surah"])
+            if key not in cache:
+                paths = [Path(out_root, engine, vote["reciter"], f"{vote['surah']:03d}.json") for engine in LISTEN_ENGINES]
+                cache[key] = [_read(path) for path in paths] if all(path.exists() for path in paths) else None
+            if not cache[key]:
+                continue
+            ours, other = cache[key]
+            sources = [ours_name] + vote["winners"]
+            heard, raw = (_surah_times(ours, other, value, reference) for value in (pad, 0))
+            if not all(vote["ayah"] in heard.get(source, {}) for source in sources):
+                continue
+            span = lambda times, source: [round(value, 3) for value in times[source][vote["ayah"]]]
+            items.append({"id": f"pad{pad}/{vote_id}", "vote": vote_id, "round": name, "pad": pad,
+                          "reciter": vote["reciter"], "surah": vote["surah"], "ayah": vote["ayah"],
+                          "audio_url": ours["audio_url"], "winners": vote["winners"],
+                          "times": {source: span(heard, source) for source in sources},
+                          "raw": {source: span(raw, source) for source in sources},
+                          "notes": vote.get("notes", {})})
+    return sorted(items, key=lambda item: (item["reciter"], item["surah"], item["ayah"], item["pad"]))
+
+
+def record_review(path, reviews: dict, item: dict, notes: dict | None) -> None:
+    reviews[item["id"]] = {key: item[key] for key in ("vote", "reciter", "surah", "ayah", "pad", "winners")}
+    reviews[item["id"]].update(notes=clean_notes(notes, item["times"]), time=time.strftime("%Y-%m-%d %H:%M:%S"))
+    save_json(Path(path), reviews)
+
+
+def loss_rows(items: list[dict], reviews: dict) -> list[dict]:
+    """صف لكل (آية خسرها محركنا، فائز): فرق بدايتنا ونهايتنا عنه بلا هامش (سالب = قبله)، ووسوم محركنا
+    من التصويت والمراجعة معاً."""
+    ours = LISTEN_ENGINES[0]
+    rows = []
+    for item in items:
+        notes = [item["notes"].get(ours, {}), reviews.get(item["id"], {}).get("notes", {}).get(ours, {})]
+        tags = [tag for tag in NOTE_TAGS if any(tag in note.get("tags", []) for note in notes)]
+        text = " / ".join(note["text"] for note in notes if note.get("text"))
+        for winner in item["winners"]:
+            rows.append({"reciter": item["reciter"], "surah": item["surah"], "ayah": item["ayah"], "pad": item["pad"],
+                         "winner": winner,
+                         "d_start": round(item["raw"][ours][0] - item["raw"][winner][0], 3),
+                         "d_end": round(item["raw"][ours][1] - item["raw"][winner][1], 3),
+                         "tags": ", ".join(NOTE_TAGS[tag] for tag in tags), "text": text})
+    return rows
+
+
+def note_rows(records: dict, origin: str) -> list[dict]:
+    """صف لكل وسم في الأصوات أو المراجعات."""
+    return [{"origin": origin, "reciter": record["reciter"], "source": source, "tag": NOTE_TAGS[tag]}
+            for record in records.values() for source, note in record.get("notes", {}).items()
+            for tag in note["tags"]]
+
+
+def raw_offsets(out_root, reciters: str = "", surahs: str = "", reference=mp3quran_reference) -> list[dict]:
+    """لكل آية: فرق بدايتنا ونهايتنا بلا هامش عن كل مصدر آخر (سالب = قبله)، بدون أصوات."""
+    ours = LISTEN_ENGINES[0]
+    rows = []
+    for reciter, ours_result, other in _engine_pairs(out_root, reciters, surahs):
+        times = _surah_times(ours_result, other, 0, reference)
+        for source in times:
+            if source == ours:
+                continue
+            for ayah in sorted(set(times[ours]) & set(times[source])):
+                (start, end), (other_start, other_end) = times[ours][ayah], times[source][ayah]
+                rows.append({"reciter": reciter, "surah": ours_result["surah"], "ayah": ayah, "other": source,
+                             "d_start": round(start - other_start, 3), "d_end": round(end - other_end, 3)})
     return rows
 
 
@@ -470,15 +588,16 @@ def serve_local_audio(items: list[dict], port: int = 8765) -> list[str]:
     """للملفات المحلية (Drive): خادم صغير في الخلفية. يرجع مسارات الملفات المسجلة بنفس ترتيب أرقامها؛
     رابط الملف i هو <عنوان الخادم>/a<i>، ويُستبدل في audio_url بعد معرفة العنوان العام."""
     paths = sorted({item["audio_url"] for item in items if is_local(item["audio_url"])})
-    _AudioHandler.files = {f"a{i}": path for i, path in enumerate(paths)}
+    # صنف لكل منفذ: صفحة الاستماع وصفحة المراجعة تشتغلان معاً بملفات مختلفة
+    handler = type("AudioHandler", (_AudioHandler,), {"files": {f"a{i}": path for i, path in enumerate(paths)}})
     # الخادم محفوظ في http.server لا هنا: إعادة تحميل هذا الملف في نفس الجلسة تمسح متغيراته
     # والخادم القديم ما زال يحجز المنفذ
     servers = http.server.__dict__.setdefault("_othman_audio_servers", {})
     if paths:
         if port not in servers:
-            servers[port] = http.server.ThreadingHTTPServer(("127.0.0.1", port), _AudioHandler)
+            servers[port] = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
             threading.Thread(target=servers[port].serve_forever, daemon=True).start()
-        servers[port].RequestHandlerClass = _AudioHandler
+        servers[port].RequestHandlerClass = handler
     return paths
 
 
@@ -489,7 +608,11 @@ def use_served_audio(items: list[dict], paths: list[str], base_url: str) -> None
             item["audio_url"] = f"{base_url.rstrip('/')}/a{index[item['audio_url']]}"
 
 
-def listen_page(items: list[dict]) -> str:
+def listen_page(items: list[dict], mode: str = "vote") -> str:
+    """mode: "vote" للاستماع الأعمى، أو "review" لمراجعة الخسائر بالأسماء."""
     template = (Path(__file__).parent / "listen.html").read_text(encoding="utf-8")
     # "</" داخل JSON قد يغلق وسم السكربت مبكراً
-    return template.replace("__ITEMS__", json.dumps(items, ensure_ascii=False).replace("</", "<\\/"))
+    to_js = lambda value: json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
+    for name, value in (("__ITEMS__", items), ("__TAGS__", NOTE_TAGS), ("__MODE__", mode)):
+        template = template.replace(name, to_js(value))
+    return template
