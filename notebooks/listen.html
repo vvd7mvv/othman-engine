@@ -9,7 +9,8 @@
   #lc button:hover:not(:disabled) { border-color: var(--accent); }
   #lc button:disabled { opacity: .45; cursor: default; }
   #lc button.playing { background: var(--accent); border-color: var(--accent); color: #fff; }
-  #lc button.vote { background: var(--soft); }
+  #lc button.pick.on { background: var(--soft); border-color: var(--accent); font-weight: 600; }
+  #lc button.next { background: var(--accent); border-color: var(--accent); color: #fff; }
   #lc .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   #lc .title { font-size: 20px; font-weight: 600; }
   #lc .muted { color: var(--muted); font-size: 14px; }
@@ -23,7 +24,8 @@
   <div class="title" id="lc-title"></div>
   <div class="muted num" id="lc-count"></div>
 </div>
-<div class="muted">اسمع الثلاثة، واختر أفضل قصّ: يبدأ مع أول الآية ويوقف مع آخرها بدون ما يقص منها أو يدخل من الآية اللي بعدها.</div>
+<div class="muted">اسمعها كلها، واختر أفضل قصّ: يبدأ مع أول الآية ويوقف مع آخرها بدون ما يقص منها أو يدخل من الآية اللي بعدها.
+إذا تساوى أكثر من واحد في الأفضلية اخترهم كلهم.</div>
 <div class="row" id="lc-play"></div>
 <div class="row" id="lc-votes"></div>
 <div class="reveal" id="lc-reveal"></div>
@@ -37,7 +39,7 @@
   const REVEAL_MS = 2000;
   const $ = (id) => document.getElementById(id);
   const audio = $("lc-audio");
-  let index = 0, order = [], playToken = 0, busy = false;
+  let index = 0, order = [], picked = new Set(), playToken = 0, busy = false;
 
   const fmt = (s) => s.toFixed(2);
   const shuffle = (list) => {
@@ -121,30 +123,40 @@
     }
     const item = items[index];
     order = shuffle(Object.keys(item.times));
+    picked = new Set();
     $("lc-title").textContent = `${item.reciter} · سورة ${item.surah} · آية ${item.ayah}`;
     $("lc-count").textContent = `${index + 1} / ${items.length}`;
-    LETTERS.forEach((letter, slot) => {
-      const el = button(`▶ ${letter}`, "", () => play(slot, el));
+    order.forEach((source, slot) => {
+      const el = button(`▶ ${LETTERS[slot]}`, "", () => play(slot, el));
       $("lc-play").append(el);
     });
     $("lc-play").append(button("■ إيقاف", "", stop));
-    LETTERS.forEach((letter, slot) => $("lc-votes").append(button(`${letter} أفضل`, "vote", () => vote(order[slot]))));
-    $("lc-votes").append(button("متساوية", "vote", () => vote("equal")));
+    const next = button("التالي ←", "next", vote);
+    next.disabled = true;
+    order.forEach((source, slot) => {
+      const el = button(`${LETTERS[slot]} الأفضل`, "pick", () => {
+        picked.has(source) ? picked.delete(source) : picked.add(source);
+        el.classList.toggle("on", picked.has(source));
+        next.disabled = picked.size === 0;
+      });
+      $("lc-votes").append(el);
+    });
+    $("lc-votes").append(next);
   }
 
-  function reveal(item, choice) {
+  function reveal(item, winners) {
     $("lc-reveal").innerHTML = "";
     order.forEach((source, slot) => {
       const [start, end] = item.times[source];
       const line = document.createElement("div");
-      line.className = source === choice ? "chosen" : "";
+      line.className = winners.includes(source) ? "chosen" : "";
       line.innerHTML = `${LETTERS[slot]} = ${NAMES[source]} <span class="muted num">${fmt(start)} → ${fmt(end)}</span>`;
       $("lc-reveal").append(line);
     });
-    if (choice === "equal") $("lc-reveal").append(Object.assign(document.createElement("div"), {className: "chosen", textContent: "اخترت: متساوية"}));
   }
 
-  async function vote(choice) {
+  async function vote() {
+    const winners = [...picked];
     if (busy) return;
     busy = true;
     stop();
@@ -152,7 +164,7 @@
     document.querySelectorAll("#lc button").forEach((b) => (b.disabled = true));
     $("lc-status").textContent = "يحفظ…";
     try {
-      await google.colab.kernel.invokeFunction("othman.vote", [item.id, choice, order], {});
+      await google.colab.kernel.invokeFunction("othman.vote", [item.id, winners, order], {});
     } catch (error) {
       $("lc-status").innerHTML = '<span class="error">ما انحفظ صوتك. تأكد إن الجلسة شغالة (وإن خلية الصفحة مشغّلة في نفس الجلسة) وجرّب مرة ثانية.</span>';
       document.querySelectorAll("#lc button").forEach((b) => (b.disabled = false));
@@ -160,7 +172,7 @@
       return;
     }
     $("lc-status").textContent = "انحفظ ✓";
-    reveal(item, choice);
+    reveal(item, winners);
     setTimeout(() => { index++; show(); }, REVEAL_MS);
   }
 

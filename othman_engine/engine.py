@@ -10,12 +10,14 @@ from othman_engine.match import match_words
 class Engine:
     """يحمّل النموذج مرة واحدة (~1GB ذاكرة)، ثم يعالج أي عدد من الملفات."""
 
-    def __init__(self, threads: int | None = None):
+    def __init__(self, threads: int | None = None, device: str = "auto"):
+        """device: "auto" يستخدم كرت الشاشة إذا ثُبّت onnxruntime-gpu ووُجد CUDA، وإلا المعالج."""
         from othman_engine.asr.fastconformer import FastConformer
         for path in (config.MODEL_FILE, config.TOKENIZER_FILE):
             if not path.exists():
                 raise ProcessingError("no_model", f"Model file missing: {path}. Run: othman-engine download")
-        self.transcriber = FastConformer(threads=threads)
+        self.transcriber = FastConformer(threads=threads, device=device)
+        self.device = self.transcriber.device
 
     def align_audio(self, audio) -> Alignment:
         """audio: مصفوفة float32 أحادية بمعدل config.SAMPLE_RATE."""

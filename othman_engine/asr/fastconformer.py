@@ -17,12 +17,31 @@ CHUNK_MIN_SECONDS = 2
 QUIET_WINDOW_SECONDS = 0.3
 REFILL_GAP_SECONDS = 2.5
 
+def _providers(device: str) -> list:
+    """device: "auto" (كرت الشاشة إن وُجد onnxruntime-gpu و CUDA) أو "cpu" أو "cuda"."""
+    if device == "cpu":
+        return ["CPUExecutionProvider"]
+    if device not in ("auto", "cuda"):
+        raise ValueError(f"Unknown device: {device}")
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        if device == "cuda":
+            raise RuntimeError("CUDA is not available: install onnxruntime-gpu on a machine with an NVIDIA GPU")
+        return ["CPUExecutionProvider"]
+    if hasattr(ort, "preload_dlls"):
+        # يحمّل مكتبات CUDA/cuDNN من حزم pip (nvidia-*) إن وُجدت، كما في Colab
+        ort.preload_dlls()
+    # طول كل مقطع مختلف؛ البحث الشامل عن خوارزمية الالتفاف (الافتراضي) يتكرر مع كل طول جديد ويبطئ كثيراً
+    return [("CUDAExecutionProvider", {"cudnn_conv_algo_search": "DEFAULT"}), "CPUExecutionProvider"]
+
+
 class FastConformer:
-    def __init__(self, model_file=config.MODEL_FILE, tokenizer_file=config.TOKENIZER_FILE, threads=None):
+    def __init__(self, model_file=config.MODEL_FILE, tokenizer_file=config.TOKENIZER_FILE, threads=None,
+                 device="auto"):
         options = ort.SessionOptions()
         if threads:
             options.intra_op_num_threads = threads
-        self.session = ort.InferenceSession(str(model_file), options, providers=["CPUExecutionProvider"])
+        self.session = ort.InferenceSession(str(model_file), options, providers=_providers(device))
+        self.device = "cuda" if self.session.get_providers()[0] == "CUDAExecutionProvider" else "cpu"
         self.tokenizer = spm.SentencePieceProcessor(model_file=str(tokenizer_file))
         self.features = LogMelExtractor()
 
