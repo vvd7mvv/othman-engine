@@ -4,4 +4,4 @@ from othman_engine.engine import Engine
 from othman_engine.errors import ProcessingError
 
 __all__ = ["Alignment", "Engine", "ProcessingError", "Segment"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

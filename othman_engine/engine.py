@@ -26,6 +26,7 @@ class Engine:
         if result.matched_ratio < config.MIN_MATCHED_RATIO or not result.quran_segments():
             raise ProcessingError("not_quran", "No Quran recitation was recognised.")
         pauses.extend_opening_letters(audio, result)
+        pauses.refine_edges(audio, result)
         pauses.add_pauses(audio, result)
         return result
 

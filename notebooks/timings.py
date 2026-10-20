@@ -244,11 +244,13 @@ def save_json(path: Path, data: dict) -> None:
     os.replace(temp, path)
 
 
-def is_done(path: Path) -> bool:
+def is_done(path: Path, version: str = "") -> bool:
+    """version: نتيجة من نسخة أقدم للمحرك تُعاد، لتُقاس تحسيناته على نفس السور."""
     try:
-        return bool(json.loads(Path(path).read_text(encoding="utf-8")).get("ayahs"))
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
+    return bool(data.get("ayahs")) and (not version or data.get("meta", {}).get("version") == version)
 
 
 def _minutes(seconds: float) -> str:
@@ -260,8 +262,10 @@ def run_batch(sources, out_root, engine: str, align, device: str, version: str =
     """align(path, surah) ← {ayah: (start, end, confidence)}.
     speed_guess: ثواني المعالجة لكل ثانية صوت قبل أن نقيسها فعلياً؛ تُستبدل بالمقاس بعد أول سورة."""
     total_audio = total_work = 0.0
-    pending = [(s, u) for s, u in sources if not is_done(output_path(out_root, engine, u, s))]
-    print(f"{len(sources) - len(pending)} done before, {len(pending)} to go")
+    pending = [(s, u) for s, u in sources if not is_done(output_path(out_root, engine, u, s), version)]
+    older = sum(1 for s, u in pending if is_done(output_path(out_root, engine, u, s)))
+    note = f" ({older} from an older version, redone for {version})" if older else ""
+    print(f"{len(sources) - len(pending)} done before, {len(pending)} to go{note}")
     failures = []
     for index, (surah, url) in enumerate(pending, 1):
         target = output_path(out_root, engine, url, surah)
@@ -409,13 +413,15 @@ def load_votes(path) -> dict:
     for vote in votes.values():
         if "winners" not in vote and "choice" in vote:
             vote["winners"] = sorted(vote["order"]) if vote["choice"] == "equal" else [vote["choice"]]
+        for note in vote.get("notes", {}).values():
+            tags = {OLD_TAGS.get(tag, tag) for tag in note["tags"]}
+            note["tags"] = [tag for tag in NOTE_TAGS if tag in tags]
     return votes
 
 
 # ملاحظات اختيارية على كل قصّة في صفحة الاستماع وصفحة المراجعة
 NOTE_TAGS = {
-    "late_start": "بدأ متأخر (قص من أول الآية)",
-    "no_lead": "الآية كاملة بس ما فيه هامش بداية",
+    "late_start": "قص من أول الآية أو ما فيه هامش بداية",
     "long_lead": "هامش البداية طويل",
     "cut_end": "قص من آخر الآية",
     "cut_echo": "قص الصدى أو آخر النفَس",
@@ -426,6 +432,8 @@ NOTE_TAGS = {
     "perfect": "مثالي",
 }
 NOTE_MAX_CHARS = 500
+# وسوم انحذفت أو اندمجت في غيرها، وقد تكون محفوظة في أصوات قديمة
+OLD_TAGS = {"no_lead": "late_start"}
 
 
 def clean_notes(notes: dict | None, sources) -> dict:

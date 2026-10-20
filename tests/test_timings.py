@@ -65,6 +65,8 @@ def test_save_and_is_done(tmp_path):
     timings.save_json(target, {"ayahs": [{"ayah": 1}]})
     assert timings.is_done(target) and json.loads(target.read_text())["ayahs"]
     assert not list(target.parent.glob("*.part"))
+    timings.save_json(target, {"ayahs": [{"ayah": 1}], "meta": {"version": "0.1.0"}})
+    assert timings.is_done(target, "0.1.0") and not timings.is_done(target, "0.2.0")
 
 
 def test_compare():
@@ -275,6 +277,9 @@ def test_colab_proxy_url_retries(monkeypatch):
 def test_load_votes_first_round_format(tmp_path):
     order = ["mp3quran", "othman-engine", "munajjam-whisperx"]
     path = tmp_path / "votes.json"
-    timings.save_json(path, {"a": {"choice": "mp3quran", "order": order}, "b": {"choice": "equal", "order": order}})
+    notes = {"othman-engine": {"tags": ["no_lead", "late_start", "cut_end"], "text": ""}}
+    timings.save_json(path, {"a": {"choice": "mp3quran", "order": order, "notes": notes},
+                             "b": {"choice": "equal", "order": order}})
     votes = timings.load_votes(path)
     assert votes["a"]["winners"] == ["mp3quran"] and votes["b"]["winners"] == sorted(order)
+    assert votes["a"]["notes"]["othman-engine"]["tags"] == ["late_start", "cut_end"]

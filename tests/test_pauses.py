@@ -68,3 +68,42 @@ def test_opening_letters_start_with_the_sound_not_with_the_transcribed_letter():
     extend_opening_letters(audio, alignment)
     assert abs(alignment.segments[0].start - 1.0) < 0.1
     assert alignment.segments[1].start == 10.6  # الآيات العادية لا تتغير
+
+
+def test_ayah_edges_follow_the_sound_not_the_transcribed_words():
+    from othman_engine.pauses import refine_edges
+    # الآية الأولى صوتها 1.0–6.0 والموديل كتبها 1.4–5.2 (قطع آخر مد)؛ سكتة ثم الثانية 7.0–10.0 كتبها 7.3–9.5
+    audio = _recitation([(1.0, 6.0), (7.0, 10.0)], 12.0, echo=0.02)
+    alignment = Alignment(12.0, 1.0, [Segment(97, 1, 1.4, 5.2, 1.0), Segment(97, 2, 7.3, 9.5, 1.0)])
+    refine_edges(audio, alignment)
+    first, second = alignment.segments
+    assert abs(first.start - 1.0) < 0.1 and abs(first.end - 6.0) < 0.1
+    assert abs(second.start - 7.0) < 0.1 and abs(second.end - 10.0) < 0.1
+
+
+def test_ayah_edges_stop_at_the_quietest_point_between_connected_ayahs():
+    from othman_engine.pauses import refine_edges
+    # قراءة موصولة: هبوط قصير (أقل من 0.3 ثانية) عند 5.0 فقط
+    audio = _recitation([(1.0, 5.0), (5.15, 9.0)], 10.0, echo=0.02)
+    alignment = Alignment(10.0, 1.0, [Segment(97, 1, 1.0, 4.2, 1.0), Segment(97, 2, 5.8, 9.0, 1.0)])
+    refine_edges(audio, alignment)
+    first, second = alignment.segments
+    assert first.end <= second.start
+    assert 4.9 <= first.end <= 5.2 and 4.9 <= second.start <= 5.2
+
+
+def test_ayah_edges_never_shrink():
+    from othman_engine.pauses import refine_edges
+    audio = _recitation([(2.0, 4.0)], 6.0, echo=0.02)
+    alignment = Alignment(6.0, 1.0, [Segment(97, 1, 1.5, 4.5, 1.0)])
+    refine_edges(audio, alignment)
+    assert (alignment.segments[0].start, alignment.segments[0].end) == (1.5, 4.5)
+
+
+def test_digital_silence_at_the_end_of_the_file_is_not_the_room_noise_level():
+    from othman_engine.pauses import refine_edges
+    audio = _recitation([(1.0, 5.0)], 9.0, echo=0.02)
+    audio[int(7.0 * SR):] = 0
+    alignment = Alignment(9.0, 1.0, [Segment(97, 1, 1.0, 4.6, 1.0)])
+    refine_edges(audio, alignment)
+    assert abs(alignment.segments[0].end - 5.0) < 0.1
