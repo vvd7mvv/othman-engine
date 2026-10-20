@@ -410,6 +410,7 @@ def load_votes(path) -> dict:
 # ملاحظات اختيارية على كل قصّة في صفحة الاستماع وصفحة المراجعة
 NOTE_TAGS = {
     "late_start": "بدأ متأخر (قص من أول الآية)",
+    "no_lead": "الآية كاملة بس ما فيه هامش بداية",
     "long_lead": "هامش البداية طويل",
     "cut_end": "قص من آخر الآية",
     "cut_echo": "قص الصدى أو آخر النفَس",
@@ -600,6 +601,21 @@ def serve_local_audio(items: list[dict], port: int = 8765) -> list[str]:
             threading.Thread(target=servers[port].serve_forever, daemon=True).start()
         servers[port].RequestHandlerClass = handler
     return paths
+
+
+def colab_proxy_url(port: int, attempts: int = 4) -> str:
+    """الرابط العام لمنفذ داخل جلسة Colab. المتصفح يطلبه بنفسه وقد يفشل مؤقتاً ("Failed to fetch")، فنعيد المحاولة."""
+    from google.colab import output
+    for attempt in range(attempts):
+        try:
+            return output.eval_js(f"google.colab.kernel.proxyPort({port})")
+        except Exception as error:
+            last = error
+            time.sleep(2 * (attempt + 1))
+    raise RuntimeError(
+        "المتصفح ما قدر يفتح رابط ملفات الصوت من Drive. جرّب بالترتيب: حدّث صفحة Colab (F5) وشغّل الخلية مرة ثانية، "
+        "ثم وقّف مانع الإعلانات لموقع colab.research.google.com، ثم اسمح بملفات تعريف الارتباط (cookies) لنفس الموقع، "
+        f"أو جرّب Chrome. الخطأ: {last}")
 
 
 def use_served_audio(items: list[dict], paths: list[str], base_url: str) -> None:
