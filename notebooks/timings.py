@@ -402,9 +402,14 @@ def listen_queue(out_root, reciters: str = "", surahs: str = "", threshold: floa
 
 def load_votes(path) -> dict:
     try:
-        return _read(path)
+        votes = _read(path)
     except (OSError, ValueError):
         return {}
+    # الجولة الأولى حفظت choice: مصدر واحد أو "equal" (كلها متساوية) بدل winners
+    for vote in votes.values():
+        if "winners" not in vote and "choice" in vote:
+            vote["winners"] = sorted(vote["order"]) if vote["choice"] == "equal" else [vote["choice"]]
+    return votes
 
 
 # ملاحظات اختيارية على كل قصّة في صفحة الاستماع وصفحة المراجعة
