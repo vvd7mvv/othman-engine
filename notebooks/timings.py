@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -68,7 +69,9 @@ def parse_surahs(spec: str) -> list[int]:
 
 
 def _name_key(name: str) -> str:
-    name = re.sub(r"[\u064B-\u0652\u0670\u0640\s]", "", name)
+    # بعض أسماء الملفات تكتب الهمزة حرفاً مستقلاً بعد الألف (ا + ٔ)؛ NFKC يجمعهما في أ
+    name = unicodedata.normalize("NFKC", name)
+    name = re.sub(r"[\u064B-\u0655\u0670\u0640\s]", "", name)
     name = re.sub("[أإآٱء]", "ا", name).replace("ة", "ه").replace("ى", "ي").replace("ؤ", "و").replace("ئ", "ي")
     return name[2:] if name.startswith("ال") and len(name) > 3 else name
 
@@ -85,14 +88,14 @@ def file_name(source: str) -> str:
 
 
 def surah_from_url(url: str) -> int:
-    """من اسم الملف: رقم في آخره (002.mp3) أو اسم السورة بعد كلمة «سورة» (… | سورة عبس.mp3)."""
+    """من اسم الملف: اسم السورة بعد كلمة «سورة» (… | سورة عبس.mp3)، أو رقم في آخره (002.mp3) أو أوله (002 - …)."""
     name = Path(file_name(url)).stem
     named = re.search(r"سور[ةه]\s*(.+)$", name)
     if named and _name_key(named.group(1)) in _SURAH_KEYS:
         return _SURAH_KEYS[_name_key(named.group(1))]
-    digits = re.search(r"(\d{1,3})$", name.strip())
-    if digits and 1 <= int(digits.group(1)) <= 114:
-        return int(digits.group(1))
+    for digits in (re.search(r"(\d{1,3})$", name.strip()), re.match(r"\s*(\d{1,3})(?!\d)", name)):
+        if digits and 1 <= int(digits.group(1)) <= 114:
+            return int(digits.group(1))
     if _name_key(name) in _SURAH_KEYS:
         return _SURAH_KEYS[_name_key(name)]
     raise ValueError(f"Cannot tell the surah from the file name: {url}")
