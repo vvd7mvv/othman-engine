@@ -86,6 +86,10 @@ def test_surah_from_local_names():
     assert [timings.surah_from_url(name.format(n)) for n in ("سبأ", "الإنسان", "آل عمران", "الانفطار", "عم")] == [
         34, 76, 3, 82, 78]
     assert timings.surah_from_url("/d/002.wav") == 2
+    assert timings.surah_from_url("/d/012 - تلاوة.opus") == 12
+    decomposed = "/d/003 - المصحف ｜ سورة \u0627\u0653ل عمران.opus"  # آ مكتوبة ا + مدة
+    assert timings.surah_from_url(decomposed) == 3
+    assert timings.surah_from_url("/d/x ｜ سورة الما\u064a\u0654دة.opus") == 5
     with pytest.raises(ValueError):
         timings.surah_from_url("/d/تلاوة.mp3")
 
