@@ -248,3 +248,25 @@ def test_raw_offsets(tmp_path):
     munajjam = [(r["ayah"], r["d_start"], r["d_end"]) for r in rows if r["other"] == "munajjam-whisperx"]
     assert munajjam == [(1, 0, -0.3), (2, 0, -0.4), (3, 0, 0)]
     assert len(rows) == 6
+
+
+def test_colab_proxy_url_retries(monkeypatch):
+    import types
+    calls = []
+
+    def eval_js(code):
+        calls.append(code)
+        if len(calls) < 3:
+            raise RuntimeError("Error: TypeError: Failed to fetch")
+        return "https://8765-x.colab.dev/"
+
+    colab = types.ModuleType("google.colab")
+    colab.output = types.SimpleNamespace(eval_js=eval_js)
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.colab", colab)
+    monkeypatch.setattr(timings.time, "sleep", lambda seconds: None)
+    assert timings.colab_proxy_url(8765) == "https://8765-x.colab.dev/"
+    assert calls == ["google.colab.kernel.proxyPort(8765)"] * 3
+    calls.clear()
+    with pytest.raises(RuntimeError, match="Failed to fetch"):
+        timings.colab_proxy_url(8765, attempts=2)
