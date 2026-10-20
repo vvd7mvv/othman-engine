@@ -65,6 +65,8 @@ def test_save_and_is_done(tmp_path):
     timings.save_json(target, {"ayahs": [{"ayah": 1}]})
     assert timings.is_done(target) and json.loads(target.read_text())["ayahs"]
     assert not list(target.parent.glob("*.part"))
+    timings.save_json(target, {"ayahs": [{"ayah": 1}], "meta": {"version": "0.1.0"}})
+    assert timings.is_done(target, "0.1.0") and not timings.is_done(target, "0.2.0")
 
 
 def test_compare():

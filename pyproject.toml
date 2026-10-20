@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "othman-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "Recognise the surah and ayahs in a Quran recitation and time every ayah and word, on CPU"
 readme = "README.md"
 license = "MIT"
