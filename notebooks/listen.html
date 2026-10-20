@@ -211,6 +211,8 @@
       await google.colab.kernel.invokeFunction(name, args, {});
     } catch (error) {
       $("lc-status").innerHTML = '<span class="error">ما انحفظ. تأكد إن الجلسة شغالة (وإن خلية الصفحة مشغّلة في نفس الجلسة) وجرّب مرة ثانية.</span>';
+      // نص الخطأ من بايثون يبيّن السبب (مثل دفتر قديم لا يستقبل الملاحظات)
+      $("lc-status").append(" ", Object.assign(document.createElement("div"), {className: "muted num", textContent: String(error && error.message || error)}));
       document.querySelectorAll("#lc button, #lc input").forEach((b) => (b.disabled = false));
       busy = false;
       return false;
