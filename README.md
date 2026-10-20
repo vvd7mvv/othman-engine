@@ -11,7 +11,8 @@
 
 - **يتعرف على السورة لحاله:** لا تحتاج تحديد السورة، والمقطع قد يكون جزءاً من سورة أو يعبر سورتين.
 - **يتحمل التلاوة الحقيقية:** الاستعاذة والكلام غير القرآني يُتجاهلان، وإعادة الآية، والوقف والابتداء، والحروف المقطعة.
-- **يعمل على المعالج فقط:** بلا كرت شاشة ولا PyTorch، بذاكرة نحو 1GB. تلاوة 9 دقائق تُعالج في نحو 15 ثانية على 4 أنوية.
+- **يعمل على المعالج:** بلا كرت شاشة ولا PyTorch، بذاكرة نحو 1GB. تلاوة 9 دقائق تُعالج في نحو 15 ثانية على 4 أنوية.
+  وكرت الشاشة اختياري: ثبّت `onnxruntime-gpu` بدل `onnxruntime` فيستخدمه المحرك تلقائياً (`--device cpu` لمنعه).
 
 هو المحرك الذي يعمل خلف موقع "عثمان" لرسم الآيات على مقاطع التلاوات.
 
@@ -32,7 +33,7 @@ othman-engine download          # النموذج (~1GB) ونص Tanzil، مرة �
 **بلا تثبيت:** جرّبه في Google Colab من الزر أعلى الصفحة (`colab.ipynb`).
 
 **مصحف كامل:** `notebooks/othman_engine_batch.ipynb` يوقّت سوراً من روابط صوت (مثل مجلد قارئ في mp3quran)، ويحفظ
-ملف JSON لكل سورة في Google Drive أولاً بأول، ويكمل من حيث توقف. وبنفس المدخلات والصيغة `munajjam_batch.ipynb`
+ملف JSON لكل سورة في Google Drive أولاً بأول، ويكمل من حيث توقف. ويقبل مجلد ملفات في Drive (السورة من اسم الملف: رقم أو «سورة عبس»). وبنفس المدخلات والصيغة `munajjam_batch.ipynb`
 لمحرك [منجّم](https://github.com/Itqan-community/Munajjam)، و`compare_engines.ipynb` يقارن الاثنين بتوقيت mp3quran.
 `listen_compare.ipynb` استماع أعمى: تسمع قصّ كل مصدر للآية بأسماء مخفية وتصوّت للأفضل، وفي النهاية نسبة فوز كل مصدر.
 
@@ -115,7 +116,8 @@ times for **every ayah and every word**, plus the reciter's breathing pauses ins
 
 - **Finds the surah by itself:** no surah number needed; a clip can start mid-surah or cross two surahs.
 - **Handles real recitations:** isti'adha and other speech are ignored; repeated ayahs, waqf and ibtida', and the disjoined letters work.
-- **CPU only:** no GPU, no PyTorch, about 1 GB of RAM. A 9-minute recitation takes about 15 seconds on 4 cores.
+- **Runs on the CPU:** no GPU, no PyTorch, about 1 GB of RAM. A 9-minute recitation takes about 15 seconds on 4 cores.
+  A GPU is optional: install `onnxruntime-gpu` instead of `onnxruntime` and the engine uses it (`--device cpu` to opt out).
 
 It is the engine behind the "Othman" site that draws the ayahs on recitation videos.
 
@@ -136,7 +138,7 @@ Files go to `~/.othman-engine`; set `OTHMAN_ENGINE_HOME` to change that.
 **No install:** try it in Google Colab with the button at the top (`colab.ipynb`).
 
 **Whole mushaf:** `notebooks/othman_engine_batch.ipynb` times surahs from audio URLs (e.g. a reciter folder on mp3quran),
-saves one JSON per surah to Google Drive as it goes and resumes where it stopped. `munajjam_batch.ipynb` does the same
+saves one JSON per surah to Google Drive as it goes and resumes where it stopped. It also takes a Drive folder of files (surah from each name: a number or «سورة <name>»). `munajjam_batch.ipynb` does the same
 with [Munajjam](https://github.com/Itqan-community/Munajjam), and `compare_engines.ipynb` compares both with mp3quran's timings.
 `listen_compare.ipynb` is a blind listening test: vote for the best cut of each ayah, then see each source's win rate.
 

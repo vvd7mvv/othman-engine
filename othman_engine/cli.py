@@ -31,6 +31,8 @@ def main(argv=None) -> None:
     align.add_argument("--start", type=float, default=0.0, help="seconds")
     align.add_argument("--end", type=float, help="seconds")
     align.add_argument("--threads", type=int, help="CPU threads for the model")
+    align.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto",
+                       help="auto uses an NVIDIA GPU when onnxruntime-gpu is installed")
     args = parser.parse_args(argv)
 
     if args.command == "download":
@@ -41,7 +43,7 @@ def main(argv=None) -> None:
     from othman_engine.engine import Engine
     started = time.time()
     try:
-        result = Engine(args.threads).align_file(args.file, args.start, args.end)
+        result = Engine(args.threads, args.device).align_file(args.file, args.start, args.end)
     except ProcessingError as error:
         sys.exit(f"error [{error.code}]: {error}")
     text = json.dumps(to_json(result), ensure_ascii=False, indent=1)
