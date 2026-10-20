@@ -1,3 +1,4 @@
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -166,6 +167,15 @@ def test_serve_local_audio(tmp_path):
     with opener.open(request) as response:
         assert response.status == 206 and response.read() == bytes(range(10, 20))
         assert response.headers["Content-Range"] == "bytes 10-19/1024"
+    # إعادة تشغيل الخلية بعد إعادة تحميل الملف: نفس المنفذ، والملفات الجديدة
+    other = tmp_path / "سورة النبأ.mp3"
+    other.write_bytes(b"x" * 50)
+    reloaded = importlib.reload(timings)
+    items = [{"audio_url": str(other)}]
+    paths = reloaded.serve_local_audio(items, port=8799)
+    reloaded.use_served_audio(items, paths, "http://127.0.0.1:8799/")
+    with opener.open(items[0]["audio_url"]) as response:
+        assert response.read() == b"x" * 50
 
 
 def test_listen_page_escapes_script():

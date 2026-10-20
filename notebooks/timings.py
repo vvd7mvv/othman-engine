@@ -466,18 +466,19 @@ class _AudioHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-_server = None
-
-
 def serve_local_audio(items: list[dict], port: int = 8765) -> list[str]:
     """للملفات المحلية (Drive): خادم صغير في الخلفية. يرجع مسارات الملفات المسجلة بنفس ترتيب أرقامها؛
     رابط الملف i هو <عنوان الخادم>/a<i>، ويُستبدل في audio_url بعد معرفة العنوان العام."""
-    global _server
     paths = sorted({item["audio_url"] for item in items if is_local(item["audio_url"])})
     _AudioHandler.files = {f"a{i}": path for i, path in enumerate(paths)}
-    if paths and _server is None:
-        _server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _AudioHandler)
-        threading.Thread(target=_server.serve_forever, daemon=True).start()
+    # الخادم محفوظ في http.server لا هنا: إعادة تحميل هذا الملف في نفس الجلسة تمسح متغيراته
+    # والخادم القديم ما زال يحجز المنفذ
+    servers = http.server.__dict__.setdefault("_othman_audio_servers", {})
+    if paths:
+        if port not in servers:
+            servers[port] = http.server.ThreadingHTTPServer(("127.0.0.1", port), _AudioHandler)
+            threading.Thread(target=servers[port].serve_forever, daemon=True).start()
+        servers[port].RequestHandlerClass = _AudioHandler
     return paths
 
 
