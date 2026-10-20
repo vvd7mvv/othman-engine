@@ -270,3 +270,11 @@ def test_colab_proxy_url_retries(monkeypatch):
     calls.clear()
     with pytest.raises(RuntimeError, match="Failed to fetch"):
         timings.colab_proxy_url(8765, attempts=2)
+
+
+def test_load_votes_first_round_format(tmp_path):
+    order = ["mp3quran", "othman-engine", "munajjam-whisperx"]
+    path = tmp_path / "votes.json"
+    timings.save_json(path, {"a": {"choice": "mp3quran", "order": order}, "b": {"choice": "equal", "order": order}})
+    votes = timings.load_votes(path)
+    assert votes["a"]["winners"] == ["mp3quran"] and votes["b"]["winners"] == sorted(order)
