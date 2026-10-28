@@ -69,7 +69,8 @@ for segment in result.quran_segments():
 ```
 - `ayah: 0` هي البسملة في أول السور (عدا الفاتحة لأنها آيتها الأولى، والتوبة).
 - `words[].index` ترتيب الكلمة في نص Tanzil الإملائي للآية. للعرض بنص آخر (مثل نص مجمع الملك فهد) استخدم رقم السورة والآية.
-- `confidence` نسبة كلمات الآية التي طابقها التفريغ (أقل من 0.8 يستحق المراجعة).
+- `confidence` نسبة كلمات الآية التي طابقها التفريغ (أقل من 0.8 يستحق المراجعة). `0` آية لم يكتبها التفريغ فأخذت
+  الصوت بين جارتيها: وقتها غالباً صحيح لكنه مستنتج، فراجعه.
 - `start` و `end` للآية من الصوت نفسه: من أول صوت إلى أن يهدأ المد والصدى (بلا هامش صمت؛ أضِفه أنت عند التصميم).
   أما أوقات `words` فكما كتبها التفريغ.
 - `pauses` وقفات القارئ للنفَس داخل الآية.
@@ -98,11 +99,14 @@ pytest tests                    # اختبارات سريعة بلا نموذج 
 1. **التفريغ** (`asr/`): نموذج FastConformer مدرّب على التلاوات (ONNX). الموديل تدرّب على آيات مفردة فيُسقط أجزاءً من المقاطع الطويلة،
    لذلك يُقطَّع الصوت عند أهدأ النقاط إلى 12 ثانية فأقل، وتُعاد قراءة أي فجوة أطول من 2.5 ثانية بين الكلمات.
 2. **المطابقة** (`match.py`): ثلاثيات الكلمات تحدد مواضع محتملة في المصحف كله، وسلسلة المقاطع الأفضل بالبرمجة الديناميكية،
-   ثم محاذاة الكلمات داخل الفجوات. قائمة ثابتة للحروف المقطعة لأن النموذج يقطّعها ويكررها.
+   ثم محاذاة الكلمات داخل الفجوات. قائمة ثابتة للحروف المقطعة لأن النموذج يقطّعها ويكررها، ويكتب أحياناً حرفاً منها مكان آخر
+   («ط» مكان «ق» الممدودة). البسملة تُعرف بكلماتها الأربع متتالية، والآية القصيرة أول السورة («القارعة») تُطابق ولو لم تكوّن ثلاثية.
 3. **التوقيت** (`alignment.py`): آية لكل قراءة، ووقت كل كلمة.
 4. **وقفات النفَس** (`pauses.py`): من هدوء الصوت نفسه لا من فراغ توقيت الكلمات (النموذج يقطع المد مبكراً).
 5. **حدود الآية** (`pauses.refine_edges`): النموذج يبدأ أول كلمة متأخراً ويقطع آخر مد، فتُمدّ البداية للخلف لأول صوت
    والنهاية للأمام لين يهدأ الصوت، دون تجاوز أهدأ نقطة في السكتة بينها وبين الآية المجاورة.
+6. **الآية التي لم يكتبها النموذج** (`pauses.fill_missing`): آية واحدة ناقصة بين آيتين موجودتين (أو أول الملف) تأخذ الصوت
+   بينهما بثقة 0.
 
 ### الرخص والمصادر
 - **كود هذا المستودع:** رخصة MIT (ملف `LICENSE`).
@@ -163,7 +167,8 @@ for segment in result.quran_segments():
 See the JSON example above. `ayah: 0` is the basmala at the start of a surah (except Al-Fatiha, where it is ayah 1, and At-Tawba).
 `words[].index` is the word's position in the Tanzil simple text of the ayah; use the surah and ayah numbers to show any other text,
 such as the King Fahd Complex Uthmani script. `confidence` is the share of the ayah's words the transcription matched (below 0.8 is
-worth a look). A repeated ayah appears once per reading.
+worth a look); `0` means the transcription missed the ayah entirely and it took the sound between its neighbours (usually right,
+but inferred, so check it). A repeated ayah appears once per reading.
 An ayah's `start` and `end` come from the audio itself: from the first sound until the madd and echo fade, never past the quietest
 point between it and the next ayah, and with no silent margin (add your own when designing). Word times stay as transcribed.
 
