@@ -27,6 +27,7 @@ JUMP_PENALTY = 4.0
 LOCAL_GAP = 30
 GAP_SIMILARITY = 0.6
 MAX_GAP_CELLS = 4000
+EDGE_WORDS = 4
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,30 @@ def _align_gap(rec: list[str], rec_range: range, quran_range: range, mapping: di
             j -= 1
 
 
+def _edge_start(position: int) -> int:
+    """يضم الآيات السابقة من نفس السورة ما دام مجموع كلماتها لا يتجاوز EDGE_WORDS."""
+    stream = quran.word_stream()
+    while position > 0 and stream[position - 1].surah == stream[position].surah:
+        before = stream[position - 1]
+        span = quran.ayah_span(before.surah, before.ayah)
+        # البسملة تشبه الاستعاذة قبلها («الرجيم» و«الرحيم»)، فلا تدخل
+        if before.ayah == quran.BASMALA_AYAH or len(span) > EDGE_WORDS:
+            break
+        position = span.start
+    return position
+
+
+def _edge_stop(position: int) -> int:
+    stream = quran.word_stream()
+    while position < len(stream) and stream[position].surah == stream[position - 1].surah:
+        after = stream[position]
+        span = quran.ayah_span(after.surah, after.ayah)
+        if len(span) > EDGE_WORDS:
+            break
+        position = span.stop
+    return position
+
+
 def match_words(words: list[Word]) -> dict[int, int]:
     """يرجع: رقم الكلمة في التفريغ -> موقعها في word_stream."""
     rec = [normalize_word(w.text) for w in words]
@@ -192,14 +217,14 @@ def match_words(words: list[Word]) -> dict[int, int]:
             q_lo, q_hi = prev.quran_end, nxt.quran_start
             if q_hi < q_lo:  # إعادة: الكلمات المفقودة قد تكون بداية الإعادة
                 q_lo = max(0, q_hi - (rec_hi - rec_lo))
-        # الأطراف (قبل أول مقطع وبعد آخر مقطع) غالباً كلام غير قرآني كالاستعاذة،
-        # فلا نطابقها إلا مع بقية الآية نفسها
+        # الأطراف (قبل أول مقطع وبعد آخر مقطع) غالباً كلام غير قرآني كالاستعاذة، فلا نطابقها إلا مع بقية الآية
+        # نفسها والآيات القصيرة المجاورة من نفس السورة: آية من كلمة أو كلمتين («القارعة») لا تكوّن ثلاثية وحدها
         elif prev:
             last = stream[prev.quran_end - 1]
-            q_lo, q_hi = prev.quran_end, quran.ayah_span(last.surah, last.ayah).stop
+            q_lo, q_hi = prev.quran_end, _edge_stop(quran.ayah_span(last.surah, last.ayah).stop)
         else:
             first = stream[nxt.quran_start]
-            q_lo, q_hi = quran.ayah_span(first.surah, first.ayah).start, nxt.quran_start
+            q_lo, q_hi = _edge_start(quran.ayah_span(first.surah, first.ayah).start), nxt.quran_start
             # الحروف المقطعة آية مستقلة قبلها (مثل "الم" ثم "تنزيل الكتاب")، وثلاثياتها لا تكفي لمقطع
             while q_lo > 0 and quran.is_muqattaat_ayah(stream[q_lo - 1].surah, stream[q_lo - 1].ayah):
                 q_lo -= 1
