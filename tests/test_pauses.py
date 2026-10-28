@@ -107,3 +107,28 @@ def test_digital_silence_at_the_end_of_the_file_is_not_the_room_noise_level():
     alignment = Alignment(9.0, 1.0, [Segment(97, 1, 1.0, 4.6, 1.0)])
     refine_edges(audio, alignment)
     assert abs(alignment.segments[0].end - 5.0) < 0.1
+
+
+def test_an_ayah_the_model_did_not_write_takes_the_sound_between_its_neighbours():
+    from othman_engine.pauses import fill_missing
+    audio = _recitation([(1.0, 3.0), (3.5, 5.0), (5.5, 8.0)], 9.0, echo=0.02)
+    alignment = Alignment(9.0, 1.0, [Segment(101, 1, 1.0, 3.0, 1.0), Segment(101, 3, 5.5, 8.0, 1.0)])
+    fill_missing(audio, alignment)
+    assert [(s.ayah, s.start, s.end, s.confidence) for s in alignment.segments] == [
+        (1, 1.0, 3.0, 1.0), (2, 3.5, 5.0, 0.0), (3, 5.5, 8.0, 1.0)]
+
+
+def test_a_silent_gap_is_not_an_ayah():
+    from othman_engine.pauses import fill_missing
+    audio = _recitation([(1.0, 3.0), (5.5, 8.0)], 9.0, echo=0.02)
+    alignment = Alignment(9.0, 1.0, [Segment(101, 1, 1.0, 3.0, 1.0), Segment(101, 3, 5.5, 8.0, 1.0)])
+    fill_missing(audio, alignment)
+    assert [s.ayah for s in alignment.segments] == [1, 3]
+
+
+def test_a_first_ayah_at_the_very_start_of_the_file():
+    from othman_engine.pauses import fill_missing
+    audio = _recitation([(0.1, 1.5), (1.8, 5.0)], 6.0, echo=0.02)
+    alignment = Alignment(6.0, 1.0, [Segment(101, 2, 1.8, 5.0, 1.0)])
+    fill_missing(audio, alignment)
+    assert [(s.ayah, s.start) for s in alignment.segments] == [(1, 0.1), (2, 1.8)]

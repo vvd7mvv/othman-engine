@@ -113,3 +113,28 @@ def test_istiadha_does_not_reach_a_normal_previous_ayah():
 def test_repeating_the_whole_ayah_is_a_new_reading():
     got, _ = segments(recite((7, 5), (7, 5), (7, 6)))
     assert got == [(7, 5), (7, 5), (7, 6)]
+
+
+def test_a_short_first_ayah_without_its_own_trigram_is_found():
+    # كما كتبها الموديل للسديس: «قريش» ثم مقطع زائد «ش» فلا تتكون ثلاثية تبدأ بالآية الأولى
+    got, _ = segments(recite((106, 0), (106, 1), "ش", (106, 2), (106, 3)))
+    assert got == [(106, 0), (106, 1), (106, 2), (106, 3)]
+
+
+def test_the_basmala_keeps_its_words_and_ar_rahman_gets_its_own():
+    words = recite((55, 0), "الرحم", (55, 2), (55, 3), (55, 4))
+    got, result = segments(words)
+    assert got == [(55, 0), (55, 1), (55, 2), (55, 3), (55, 4)]
+    assert result.segments[1].start == words[4].start
+
+
+def test_qaf_written_as_another_opening_letter():
+    # الموديل يكتب «ق» الممدودة «ط»
+    got, result = segments(recite((50, 0), "ط", (50, 1, 1, None), (50, 2)))
+    assert got == [(50, 0), (50, 1), (50, 2)]
+    assert result.segments[1].confidence == 1.0
+
+
+def test_istiadha_alone_is_not_taken_for_the_basmala():
+    got, _ = segments(recite("أعوذ بالله من الشيطان الرجيم", (101, 1), (101, 2), (101, 3)))
+    assert (101, 0) not in got and got[0] == (101, 1)

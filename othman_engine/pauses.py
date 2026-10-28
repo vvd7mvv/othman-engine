@@ -1,9 +1,10 @@
-"""توقيت من الصوت نفسه حيث لا يكفي توقيت التفريغ: حدود الآية، ووقفات النفَس داخلها، وبداية الحروف المقطعة الممدودة."""
+"""توقيت من الصوت نفسه حيث لا يكفي توقيت التفريغ: حدود الآية، ووقفات النفَس داخلها، وبداية الحروف المقطعة الممدودة،
+والآية التي لم يكتبها الموديل بين جارتين."""
 import numpy as np
 
 from othman_engine import config
 from othman_engine import quran
-from othman_engine.alignment import Alignment
+from othman_engine.alignment import Alignment, Segment
 
 FRAME_SECONDS = 0.05
 # صدى المسجد يُبقي الوقفة مسموعة (~10dB تحت القراءة)، أما التوقف عند حرف مشدد أو قلقلة فأقصر من نصف ثانية
@@ -102,6 +103,42 @@ def refine_edges(audio: np.ndarray, alignment: Alignment) -> None:
         after = min(end + EDGE_LOOKAROUND_SECONDS, splits[i] if i < len(splits) else alignment.duration)
         segment.start = round(_sound_edge(loudness, level, start, before), 2)
         segment.end = round(_sound_edge(loudness, level, end, after), 2)
+
+
+# آية لم يكتب الموديل منها شيئاً (أو كتبها مشوّهة)، وجارتاها موجودتان: تأخذ ما بينهما إن كان فيه قراءة.
+# ثقتها صفر فتُعلَّم للمراجعة
+MISSING_MIN_SOUND_SECONDS = 0.4
+MISSING_BELOW_READING_DB = 12
+
+
+def fill_missing(audio: np.ndarray, alignment: Alignment) -> None:
+    loudness = _loudness(audio)
+    segments = alignment.segments
+    if not len(loudness) or not segments:
+        return
+    added = []
+    first = segments[0]
+    # أول الملف بلا بسملة ولا استعاذة («القارعة» في ملف يبدأ بها)
+    if first.ayah == 2:
+        added += _between(loudness, first.surah, 1, 0.0, first.start)
+    for previous, following in zip(segments, segments[1:]):
+        if previous.surah == following.surah and following.ayah - previous.ayah == 2:
+            added += _between(loudness, previous.surah, previous.ayah + 1, previous.end, following.start)
+    alignment.segments = sorted(segments + added, key=lambda s: s.start)
+
+
+def _between(loudness: np.ndarray, surah: int, ayah: int, start: float, end: float) -> list[Segment]:
+    span = loudness[_frame(start):_frame(end)]
+    if not len(span):
+        return []
+    level = float(np.percentile(loudness, 90))
+    loud = np.flatnonzero(span > level - MISSING_BELOW_READING_DB)
+    if len(loud) * FRAME_SECONDS < MISSING_MIN_SOUND_SECONDS:
+        return []
+    first = _frame(start) + loud[0]
+    last = _frame(start) + loud[-1] + 1
+    return [Segment(surah=surah, ayah=ayah, start=round(max(start, first * FRAME_SECONDS), 2),
+                    end=round(min(end, last * FRAME_SECONDS), 2), confidence=0.0)]
 
 
 def _quietest(loudness: np.ndarray, end: float, next_start: float) -> float:

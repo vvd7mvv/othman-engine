@@ -28,6 +28,7 @@ LOCAL_GAP = 30
 GAP_SIMILARITY = 0.6
 MAX_GAP_CELLS = 4000
 EDGE_WORDS = 4
+BASMALA_SIMILARITY = 0.75
 
 
 @dataclass(frozen=True)
@@ -179,11 +180,27 @@ def _edge_start(position: int) -> int:
     while position > 0 and stream[position - 1].surah == stream[position].surah:
         before = stream[position - 1]
         span = quran.ayah_span(before.surah, before.ayah)
-        # البسملة تشبه الاستعاذة قبلها («الرجيم» و«الرحيم»)، فلا تدخل
+        # البسملة تُعرف كاملة في _take_basmala؛ مفردةً تشبه الاستعاذة («بالله»، «الرجيم») والحروف المقطعة («الم»)
         if before.ayah == quran.BASMALA_AYAH or len(span) > EDGE_WORDS:
             break
         position = span.start
     return position
+
+
+def _take_basmala(rec: list[str], rec_range: range, surah: int, mapping: dict[int, int]) -> int:
+    """البسملة المقروءة قبل أول مقطع تُطابق بكلماتها الأربع متتالية، ويُرجع أول كلمة بعدها.
+    وإلا أخذت المحاذاة «الرحمن» منها لأول سورة الرحمن، أو «القارعة» تبقى بلا كلمة تقابلها."""
+    if not quran.has_basmala(surah):
+        return rec_range.start
+    span = quran.ayah_span(surah, quran.BASMALA_AYAH)
+    stream = quran.word_stream()
+    basmala = [stream[q].text for q in span]
+    for k in range(rec_range.stop - len(basmala), rec_range.start - 1, -1):
+        if all(SequenceMatcher(None, rec[k + i], word).ratio() >= BASMALA_SIMILARITY for i, word in enumerate(basmala)):
+            for i, q in enumerate(span):
+                mapping[k + i] = q
+            return k + len(basmala)
+    return rec_range.start
 
 
 def _edge_stop(position: int) -> int:
@@ -225,12 +242,29 @@ def match_words(words: list[Word]) -> dict[int, int]:
         else:
             first = stream[nxt.quran_start]
             q_lo, q_hi = _edge_start(quran.ayah_span(first.surah, first.ayah).start), nxt.quran_start
+            if stream[q_lo].ayah != quran.BASMALA_AYAH and q_lo > 0 and stream[q_lo - 1].ayah == quran.BASMALA_AYAH:
+                rec_lo = _take_basmala(rec, range(rec_lo, rec_hi), first.surah, mapping)
             # الحروف المقطعة آية مستقلة قبلها (مثل "الم" ثم "تنزيل الكتاب")، وثلاثياتها لا تكفي لمقطع
             while q_lo > 0 and quran.is_muqattaat_ayah(stream[q_lo - 1].surah, stream[q_lo - 1].ayah):
                 q_lo -= 1
         _align_gap(rec, range(rec_lo, rec_hi), range(q_lo, q_hi), mapping)
+    _anchor_muqattaat(rec, mapping)
     _extend_muqattaat(rec, mapping)
     return mapping
+
+
+def _anchor_muqattaat(rec: list[str], mapping: dict[int, int]) -> None:
+    """الموديل قد يكتب الحرف المقطع حرفاً آخر منها («ط» بدل «ق» الممدودة)، فلا يشبهه في المطابقة.
+    إن طوبقت الكلمة التي بعده والكلمة قبلها في التفريغ من حروف المقطعات فقط، فهي هو."""
+    positions = quran.muqattaat_positions()
+    taken = set(mapping.values())
+    for index, position in sorted(mapping.items()):
+        missing = position - 1
+        k = index - 1
+        if (missing in positions and missing not in taken and k >= 0 and k not in mapping
+                and rec[k] and set(rec[k]) <= quran.MUQATTAAT_LETTERS):
+            mapping[k] = missing
+            taken.add(missing)
 
 
 def _extend_muqattaat(rec: list[str], mapping: dict[int, int]) -> None:
