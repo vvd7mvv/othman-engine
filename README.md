@@ -88,6 +88,10 @@ for segment in result.quran_segments():
 | الملك، السديس | 357 ث | ✓ | 10.5 ث |
 | الرحمن، الدوسري | 530 ث | ✓ | 14.5 ث |
 
+و`scripts/benchmark.py` يقارن حدود كل آية بتوقيت mp3quran المضبوط يدوياً لعشرة قرّاء في 15 سورة فيها أخطاء معروفة
+(5950 آية): في النسخة 0.3.0 آية واحدة ناقصة و7 خارج حدودهم (أغلبها قارئ كرر الآية أو خطأ في توقيتهم). التفريغ يُحفظ،
+فأي تعديل في المطابقة أو الحدود يُقاس في دقائق.
+
 ```bash
 git clone https://github.com/vvd7mvv/othman-engine && cd othman-engine
 pip install -e ".[dev]"
@@ -175,6 +179,9 @@ point between it and the next ayah, and with no silent margin (add your own when
 ### Accuracy
 `scripts/evaluate.py` runs on full, continuous surah recitations from quranicaudio (not everyayah files, which the model was trained on).
 All six cases pass; see the table above for durations and timings.
+`scripts/benchmark.py` compares every ayah's bounds with mp3quran's hand-made timing for ten reciters in 15 surahs with known
+pitfalls (5,950 ayahs). Version 0.3.0: one ayah missing and seven outside their bounds (mostly a repeated ayah or an error in their
+timing). Transcriptions are cached, so a change to matching or edges is measured in minutes.
 
 ### Licences and sources
 - **This repository's code:** MIT (see `LICENSE`).

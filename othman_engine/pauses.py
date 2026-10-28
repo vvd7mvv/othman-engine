@@ -135,8 +135,8 @@ def _between(loudness: np.ndarray, surah: int, ayah: int, start: float, end: flo
     loud = np.flatnonzero(span > level - MISSING_BELOW_READING_DB)
     if len(loud) * FRAME_SECONDS < MISSING_MIN_SOUND_SECONDS:
         return []
-    first = _frame(start) + loud[0]
-    last = _frame(start) + loud[-1] + 1
+    first = _frame(start) + int(loud[0])
+    last = _frame(start) + int(loud[-1]) + 1
     return [Segment(surah=surah, ayah=ayah, start=round(max(start, first * FRAME_SECONDS), 2),
                     end=round(min(end, last * FRAME_SECONDS), 2), confidence=0.0)]
 
